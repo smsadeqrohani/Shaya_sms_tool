@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import Papa from 'papaparse';
+import PersianDatePicker from './PersianDatePicker';
 import './Dashboard.css';
 
 // Utility function to clean text (no longer needed for HTML conversion)
@@ -51,6 +52,7 @@ const Dashboard = ({ onLogout, currentUser }) => {
   const [csvData, setCsvData] = useState(null);
   const [message, setMessage] = useState('');
   const [tag, setTag] = useState('');
+  const [scheduledDateTime, setScheduledDateTime] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
@@ -233,31 +235,49 @@ const Dashboard = ({ onLogout, currentUser }) => {
       // Use message directly (no HTML conversion needed)
       const plainTextMessage = cleanText(message);
       
+      // Check if this is a scheduled campaign
+      const isScheduled = scheduledDateTime !== null;
+      let scheduledTimestamp = undefined;
+      
+      if (isScheduled) {
+        scheduledTimestamp = scheduledDateTime.getTime();
+        if (scheduledTimestamp <= Date.now()) {
+          alert('Scheduled time must be in the future');
+          return;
+        }
+      }
+
       // Create campaign
       const campaignId = await createCampaignMutation({
         tag: tag || 'untagged',
         message: plainTextMessage,
         totalNumbers: csvData.numbers.length,
         totalBatches,
-        createdBy: currentUser._id
+        createdBy: currentUser._id,
+        scheduledFor: scheduledTimestamp,
+        phoneNumbers: isScheduled ? csvData.numbers : undefined
       });
 
       addLog(`Campaign created with ID: ${campaignId}`);
 
-      // Update campaign status to in progress
-      await updateCampaignStatusMutation({
-        campaignId,
-        status: 'in_progress'
-      });
+      if (isScheduled) {
+        addLog(`Campaign scheduled for: ${new Date(scheduledTimestamp).toLocaleString('fa-IR')}`);
+      } else {
+        // Update campaign status to in progress for immediate sending
+        await updateCampaignStatusMutation({
+          campaignId,
+          status: 'in_progress'
+        });
 
-      // Send SMS batches
-      await sendSMSBatch(csvData.numbers, campaignId, batchSize);
+        // Send SMS batches
+        await sendSMSBatch(csvData.numbers, campaignId, batchSize);
 
-      // Update campaign status to completed
-      await updateCampaignStatusMutation({
-        campaignId,
-        status: 'completed'
-      });
+        // Update campaign status to completed
+        await updateCampaignStatusMutation({
+          campaignId,
+          status: 'completed'
+        });
+      }
 
       addLog('Campaign completed successfully');
     } catch (error) {
@@ -277,6 +297,7 @@ const Dashboard = ({ onLogout, currentUser }) => {
     setCsvData(null);
     setMessage('');
     setTag('');
+    setScheduledDateTime(null);
     setProgress({ current: 0, total: 0 });
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -403,6 +424,58 @@ const Dashboard = ({ onLogout, currentUser }) => {
                     SMS Count: {calculateSMSCount(message)}
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* Schedule Picker */}
+            <div className="card glass">
+              <h2 className="card-title">📅 Schedule SMS</h2>
+              <div className="schedule-container">
+                <div className="schedule-options">
+                  <div className="schedule-option">
+                    <label className="schedule-label">
+                      <input
+                        type="radio"
+                        name="scheduleType"
+                        value="now"
+                        defaultChecked
+                        onChange={() => setScheduledDateTime(null)}
+                      />
+                      <span>Send Now</span>
+                    </label>
+                  </div>
+                  <div className="schedule-option">
+                    <label className="schedule-label">
+                      <input
+                        type="radio"
+                        name="scheduleType"
+                        value="later"
+                        onChange={() => {
+                          // Set default to current date and time
+                          const now = new Date();
+                          setScheduledDateTime(now);
+                        }}
+                      />
+                      <span>Schedule for Later</span>
+                    </label>
+                  </div>
+                </div>
+                
+                {scheduledDateTime && (
+                  <div className="schedule-inputs">
+                    <div className="input-group">
+                      <label className="input-label">انتخاب تاریخ و زمان:</label>
+                      <PersianDatePicker
+                        value={scheduledDateTime}
+                        onChange={setScheduledDateTime}
+                        placeholder="انتخاب تاریخ و زمان"
+                      />
+                    </div>
+                    <div className="schedule-preview">
+                      Scheduled for: {scheduledDateTime.toLocaleString('fa-IR')}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

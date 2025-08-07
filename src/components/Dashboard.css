@@ -66,6 +66,7 @@
   overflow-y: auto;
   height: 100%;
   max-height: calc(100vh - 120px);
+  position: relative;
 }
 
 .logs-lane {
@@ -182,15 +183,117 @@
   font-weight: 500;
 }
 
+/* Schedule Picker */
+.schedule-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schedule-options {
+  display: flex;
+  gap: 16px;
+}
+
+.schedule-option {
+  display: flex;
+  align-items: center;
+}
+
+.schedule-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.schedule-label input[type="radio"] {
+  accent-color: var(--primary-color);
+}
+
+.schedule-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.schedule-inputs .input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.schedule-inputs .input-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.schedule-inputs .input-field {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.schedule-inputs .input-field:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Persian Date Picker Integration */
+.schedule-inputs .persian-date-picker {
+  width: 100%;
+}
+
+.schedule-inputs .date-picker-input {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+
+.schedule-inputs .date-picker-input:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.schedule-inputs .date-picker-input:focus {
+  border-color: var(--primary-color);
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 0 2px rgba(168, 35, 60, 0.2);
+}
+
+.schedule-preview {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(168, 35, 60, 0.2);
+  border: 1px solid rgba(168, 35, 60, 0.3);
+  border-radius: 6px;
+  color: var(--primary-color);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+
 /* Action Buttons */
 .action-buttons {
   display: flex;
   gap: 12px;
   margin-bottom: 16px;
+  flex-direction: row;
 }
 
 .send-btn {
-  flex: 2;
+  flex: 1;
   padding: 14px 20px;
   font-size: 16px;
   font-weight: 600;

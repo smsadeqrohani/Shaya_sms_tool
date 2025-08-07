@@ -17,12 +17,14 @@ export default defineSchema({
     message: v.string(),
     totalNumbers: v.number(),
     totalBatches: v.number(),
-    status: v.union(v.literal("pending"), v.literal("in_progress"), v.literal("completed"), v.literal("failed")),
+    status: v.union(v.literal("pending"), v.literal("in_progress"), v.literal("completed"), v.literal("failed"), v.literal("scheduled"), v.literal("cancelled")),
     createdBy: v.id("users"),
     createdAt: v.number(),
     completedAt: v.optional(v.number()),
     persianDate: v.string(), // Persian date string
-  }).index("by_tag", ["tag"]).index("by_created_at", ["createdAt"]),
+    scheduledFor: v.optional(v.number()), // Unix timestamp for scheduled campaigns
+    isScheduled: v.optional(v.boolean()), // Flag to identify scheduled campaigns
+  }).index("by_tag", ["tag"]).index("by_created_at", ["createdAt"]).index("by_scheduled", ["scheduledFor"]),
 
   // SMS Logs table for detailed tracking
   smsLogs: defineTable({

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import './Reports.css';
 
@@ -16,12 +16,17 @@ const Reports = ({ onLogout, currentUser }) => {
   // Debug logging
   console.log('Reports component rendered with:', { currentUser });
 
-  // Convex queries
+  // Convex queries and mutations
   const campaigns = useQuery(api.sms.getAllCampaignStats);
   const campaignLogs = useQuery(
     api.sms.getCampaignLogs,
     selectedCampaign ? { campaignId: selectedCampaign } : "skip"
   );
+  const scheduledFunctions = useQuery(
+    api.sms.getScheduledFunctions,
+    selectedCampaign ? { campaignId: selectedCampaign } : "skip"
+  );
+  const cancelCampaignMutation = useMutation(api.sms.cancelCampaign);
 
   const formatDate = (timestamp) => {
     return new Date(timestamp).toLocaleDateString('fa-IR', {
@@ -47,6 +52,10 @@ const Reports = ({ onLogout, currentUser }) => {
         return 'success';
       case 'in_progress':
         return 'warning';
+      case 'scheduled':
+        return 'info';
+      case 'cancelled':
+        return 'error';
       case 'failed':
         return 'error';
       default:
@@ -60,6 +69,10 @@ const Reports = ({ onLogout, currentUser }) => {
         return '✅';
       case 'in_progress':
         return '⏳';
+      case 'scheduled':
+        return '📅';
+      case 'cancelled':
+        return '❌';
       case 'failed':
         return '❌';
       default:
@@ -131,6 +144,16 @@ const Reports = ({ onLogout, currentUser }) => {
   const closeModal = () => {
     setShowModal(false);
     setSelectedCampaign(null);
+  };
+
+  const handleCancelCampaign = async (campaignId) => {
+    try {
+      await cancelCampaignMutation({ campaignId });
+      console.log('Campaign cancelled successfully');
+    } catch (error) {
+      console.error('Error cancelling campaign:', error);
+      alert('Error cancelling campaign: ' + error.message);
+    }
   };
 
   return (
@@ -262,12 +285,23 @@ const Reports = ({ onLogout, currentUser }) => {
                       )}
                     </td>
                     <td className="actions">
-                      <button 
-                        onClick={() => handleViewDetails(campaign)}
-                        className="btn btn-primary btn-sm"
-                      >
-                        📋 Details
-                      </button>
+                      <div className="action-buttons">
+                        <button 
+                          onClick={() => handleViewDetails(campaign)}
+                          className="btn btn-primary btn-sm"
+                        >
+                          📋 Details
+                        </button>
+                        {(campaign.status === 'pending' || campaign.status === 'scheduled' || campaign.status === 'in_progress') && (
+                          <button 
+                            onClick={() => handleCancelCampaign(campaign._id)}
+                            className="btn btn-outline btn-sm cancel-btn"
+                            title="Cancel Campaign"
+                          >
+                            ❌ Cancel
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -375,6 +409,18 @@ const Reports = ({ onLogout, currentUser }) => {
                             <span className="detail-value">{formatDate(campaign.completedAt)}</span>
                           </div>
                         )}
+                        {campaign.scheduledFor && (
+                          <div className="detail-item">
+                            <span className="detail-label">Scheduled For:</span>
+                            <span className="detail-value">{formatDate(campaign.scheduledFor)}</span>
+                          </div>
+                        )}
+                        {campaign.isScheduled && (
+                          <div className="detail-item">
+                            <span className="detail-label">Scheduled Status:</span>
+                            <span className="detail-value status-info">📅 Scheduled</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -420,6 +466,31 @@ const Reports = ({ onLogout, currentUser }) => {
                         <pre className="message-text">{campaign.message}</pre>
                       </div>
                     </div>
+
+                    {/* Scheduled Functions */}
+                    {scheduledFunctions && scheduledFunctions.length > 0 && (
+                      <div className="detail-section">
+                        <h3>Scheduled Functions ({scheduledFunctions.length})</h3>
+                        <div className="scheduled-functions">
+                          {scheduledFunctions.map((func) => (
+                            <div key={func._id} className="scheduled-function">
+                              <div className="func-info">
+                                <span className="func-name">{func.name}</span>
+                                <span className="func-status status-{func.state.kind}">
+                                  {func.state.kind}
+                                </span>
+                              </div>
+                              <div className="func-details">
+                                <span>Scheduled: {formatDate(func.scheduledTime)}</span>
+                                {func.completedTime && (
+                                  <span>Completed: {formatDate(func.completedTime)}</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Detailed Logs */}
                     {campaignLogs && (

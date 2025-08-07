@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 // Create a new SMS campaign
 export const createCampaign = mutation({
@@ -10,6 +10,8 @@ export const createCampaign = mutation({
     totalNumbers: v.number(),
     totalBatches: v.number(),
     createdBy: v.id("users"),
+    scheduledFor: v.optional(v.number()), // Unix timestamp for scheduled campaigns
+    phoneNumbers: v.optional(v.array(v.string())), // Store phone numbers for scheduled campaigns
   },
   handler: async (ctx, args) => {
     const persianDate = new Intl.DateTimeFormat('fa-IR', {
@@ -20,15 +22,20 @@ export const createCampaign = mutation({
       minute: '2-digit',
     }).format(new Date());
 
+    const isScheduled = Boolean(args.scheduledFor && args.scheduledFor > Date.now());
+    const status = isScheduled ? "scheduled" : "pending";
+
     const campaignId = await ctx.db.insert("campaigns", {
       tag: args.tag,
       message: args.message,
       totalNumbers: args.totalNumbers,
       totalBatches: args.totalBatches,
-      status: "pending",
+      status,
       createdBy: args.createdBy,
       createdAt: Date.now(),
       persianDate,
+      scheduledFor: args.scheduledFor || undefined,
+      isScheduled,
     });
 
     // Initialize campaign stats with enhanced fields
@@ -41,6 +48,30 @@ export const createCampaign = mutation({
       requestCount: 0,
       lastUpdated: Date.now(),
     });
+
+    // If this is a scheduled campaign, schedule the SMS sending
+    if (isScheduled && args.phoneNumbers) {
+      const batchSize = 100;
+      const batches = [];
+      for (let i = 0; i < args.phoneNumbers.length; i += batchSize) {
+        batches.push(args.phoneNumbers.slice(i, i + batchSize));
+      }
+
+      // Schedule each batch to run at the specified time
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        if (args.scheduledFor) {
+          // Schedule the SMS sending using Convex's built-in scheduler
+          await ctx.scheduler.runAt(args.scheduledFor, internal.scheduledSMS.sendScheduledSMS, {
+            campaignId,
+            phoneNumbers: batch,
+            message: args.message,
+            tag: args.tag,
+            batchNumber: i + 1,
+          });
+        }
+      }
+    }
 
     return campaignId;
   },
@@ -407,7 +438,7 @@ export const sendSMSBatch = action({
 export const updateCampaignStatus = mutation({
   args: {
     campaignId: v.id("campaigns"),
-    status: v.union(v.literal("pending"), v.literal("in_progress"), v.literal("completed"), v.literal("failed")),
+    status: v.union(v.literal("pending"), v.literal("in_progress"), v.literal("completed"), v.literal("failed"), v.literal("scheduled"), v.literal("cancelled")),
   },
   handler: async (ctx, args) => {
     const updateData: any = { status: args.status };
@@ -417,6 +448,29 @@ export const updateCampaignStatus = mutation({
     }
 
     await ctx.db.patch(args.campaignId, updateData);
+  },
+});
+
+// Cancel campaign (for both ongoing and scheduled campaigns)
+export const cancelCampaign = mutation({
+  args: {
+    campaignId: v.id("campaigns"),
+  },
+  handler: async (ctx, args) => {
+    const campaign = await ctx.db.get(args.campaignId);
+    if (!campaign) {
+      throw new Error("Campaign not found");
+    }
+
+    // Only allow cancellation of pending, scheduled, or in_progress campaigns
+    if (campaign.status === "completed" || campaign.status === "failed" || campaign.status === "cancelled") {
+      throw new Error("Cannot cancel completed, failed, or already cancelled campaigns");
+    }
+
+    await ctx.db.patch(args.campaignId, {
+      status: "cancelled",
+      completedAt: Date.now(),
+    });
   },
 });
 
@@ -475,6 +529,68 @@ export const getAllCampaignStats = query({
         stats: campaignStats,
       };
     });
+  },
+});
+
+// Get scheduled campaigns that are ready to be sent
+export const getScheduledCampaigns = query({
+  handler: async (ctx) => {
+    const now = Date.now();
+    return await ctx.db
+      .query("campaigns")
+      .withIndex("by_scheduled", (q) => 
+        q.gte("scheduledFor", 0).lte("scheduledFor", now)
+      )
+      .filter((q) => q.eq(q.field("status"), "scheduled"))
+      .collect();
+  },
+});
+
+// Get scheduled functions for a campaign
+export const getScheduledFunctions = query({
+  args: { campaignId: v.id("campaigns") },
+  handler: async (ctx, args) => {
+    return await ctx.db.system.query("_scheduled_functions")
+      .filter((q) => 
+        q.eq(q.field("args"), [{ campaignId: args.campaignId }])
+      )
+      .collect();
+  },
+});
+
+// Get all batch logs across all campaigns
+export const getAllBatchLogs = query({
+  args: {
+    limit: v.optional(v.number()),
+    status: v.optional(v.union(v.literal("success"), v.literal("failed"), v.literal("partial_success"))),
+  },
+  handler: async (ctx, args) => {
+    let query = ctx.db.query("smsLogs").withIndex("by_sent_at", (q) => q);
+    
+    if (args.status) {
+      query = query.filter((q) => q.eq(q.field("status"), args.status));
+    }
+    
+    if (args.limit) {
+      return await query.order("desc").take(args.limit);
+    }
+    
+    return await query.order("desc").collect();
+  },
+});
+
+// Get recent batch logs for dashboard
+export const getRecentBatchLogs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit || 20;
+    
+    return await ctx.db.query("smsLogs")
+      .withIndex("by_sent_at", (q) => q)
+      .order("desc")
+      .take(limit);
   },
 });
 

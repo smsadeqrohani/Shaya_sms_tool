@@ -15,6 +15,7 @@ import type {
 } from "convex/server";
 import type * as auth from "../auth.js";
 import type * as init from "../init.js";
+import type * as scheduledSMS from "../scheduledSMS.js";
 import type * as setup from "../setup.js";
 import type * as sms from "../sms.js";
 
@@ -29,6 +30,7 @@ import type * as sms from "../sms.js";
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   init: typeof init;
+  scheduledSMS: typeof scheduledSMS;
   setup: typeof setup;
   sms: typeof sms;
 }>;
