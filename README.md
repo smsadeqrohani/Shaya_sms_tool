@@ -8,7 +8,7 @@ A modern, dark-themed web application for sending SMS messages in batches using 
 - 📁 **CSV Upload**: Upload CSV files with phone numbers in the first column
 - ✍️ **Rich Text Editor**: HTML editor with emoji support for message content
 - 🏷️ **Tagging System**: Add tags to organize your SMS campaigns
-- 📱 **Batch Processing**: Send SMS in batches of 10 (configurable)
+- 📱 **Batch Processing**: Send SMS in batches of 100 (configurable)
 - 📊 **Real-time Logs**: Monitor SMS sending progress and status
 - 🌙 **Dark Mode**: Beautiful dark theme with glass effects
 - 📱 **Responsive Design**: Works perfectly on desktop and mobile devices
@@ -23,7 +23,7 @@ A modern, dark-themed web application for sending SMS messages in batches using 
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/smsadeqrohani/Shaya_sms_tool.git
 cd Shaya_sms_tool
 ```
 
@@ -44,15 +44,14 @@ npm start
 ### Authentication
 - Use phone number format: `09xxxxxxx`
 - Password must be at least 8 characters
-- Demo credentials: `09123456789` / `password123`
+- Demo credentials: `09127726273` / `doosetdaram`
 
 ### CSV Format
 Your CSV file should have phone numbers in the first column:
 ```csv
 PhoneNumber
-09123456789
-09876543210
-09111222333
+989127726273
+989382663333
 ```
 
 ### SMS Sending Process
@@ -65,7 +64,7 @@ PhoneNumber
 The application uses the OkitSMS API with the following configuration:
 - **Endpoint**: `https://api.okitsms.com/api/v1/sms/send/1tn`
 - **Source Number**: `981000007711` (fixed)
-- **Batch Size**: 10 numbers per request
+- **Batch Size**: 100 numbers per request
 - **Delay**: 1 second between batches
 
 ## Project Structure
@@ -95,7 +94,7 @@ src/
 ## Features in Detail
 
 ### Authentication System
-- Phone number validation using regex pattern `/^09\d{8}$/`
+- Phone number validation using regex pattern `/^09\d{9}$/`
 - Password minimum length validation (8 characters)
 - Loading states and error handling
 - Session management with React Router
@@ -204,3 +203,6 @@ This project is licensed under the MIT License.
 ## Support
 
 For support and questions, please contact the development team. 
+=======
+# Shaya_sms_tool
+>>>>>>> 14ac9835af2d136c26ccec7030f7ef08d407a73c
