@@ -52,7 +52,10 @@ Your CSV file should have phone numbers in the first column:
 PhoneNumber
 989127726273
 989382663333
+09123456789
 ```
+
+**Note**: Create your own CSV file with phone numbers in the first column. The first row should be the header (e.g., "PhoneNumber").
 
 ### SMS Sending Process
 1. **Upload CSV**: Select a CSV file with phone numbers
