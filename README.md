@@ -6,7 +6,7 @@ A modern, dark-themed web application for sending SMS messages in batches using 
 
 - 🔐 **Authentication**: Phone number format validation (09xxxxxxx) with password requirements
 - 📁 **CSV Upload**: Upload CSV files with phone numbers in the first column
-- ✍️ **Rich Text Editor**: HTML editor with emoji support for message content
+- ✍️ **Rich Text Editor**: HTML editor with formatting options for message content
 - 🏷️ **Tagging System**: Add tags to organize your SMS campaigns
 - 📱 **Batch Processing**: Send SMS in batches of 100 (configurable)
 - 📊 **Real-time Logs**: Monitor SMS sending progress and status
@@ -50,9 +50,9 @@ npm start
 Your CSV file should have phone numbers in the first column:
 ```csv
 PhoneNumber
-989127726273
-989382663333
 09123456789
+09123456790
+09123456791
 ```
 
 **Note**: Create your own CSV file with phone numbers in the first column. The first row should be the header (e.g., "PhoneNumber").
@@ -89,7 +89,7 @@ src/
 
 - **React 18**: Modern React with hooks
 - **React Router**: Client-side routing
-- **React Quill**: Rich text editor with emoji support
+- **React Quill**: Rich text editor with formatting options
 - **Papa Parse**: CSV parsing library
 - **Axios**: HTTP client for API calls
 - **CSS3**: Modern styling with glass effects and animations
@@ -110,13 +110,13 @@ src/
 
 ### Rich Text Editor
 - HTML formatting capabilities
-- Emoji support
 - Bold, italic, underline formatting
 - Link and image insertion
 - Clean HTML output
+- RTL (Right-to-Left) support for Persian text
 
 ### Batch Processing
-- Configurable batch size (currently 10)
+- Configurable batch size (currently 100)
 - Progress tracking with visual indicators
 - Error handling for failed batches
 - Rate limiting with delays between batches
@@ -141,7 +141,7 @@ const response = await axios.post('https://api.okitsms.com/api/v1/sms/send/1tn',
 }, {
   headers: {
     'Content-Type': 'application/json',
-    'X-API-KEY': 'CV@%0RlPM4pIjGp5j8kBFBYmAtEh#%Sr'
+    'X-API-KEY': 'CV@%OR!pM4p!jGp5j&kBFBYmAtEh#%Sr'
   }
 });
 ```
@@ -151,7 +151,7 @@ const response = await axios.post('https://api.okitsms.com/api/v1/sms/send/1tn',
 ### Changing Batch Size
 Edit the `sendSMSBatch` function in `Dashboard.js`:
 ```javascript
-const sendSMSBatch = async (numbers, batchSize = 20) => { // Change from 10 to desired size
+const sendSMSBatch = async (numbers, batchSize = 100) => { // Change from 100 to desired size
 ```
 
 ### Modifying Colors

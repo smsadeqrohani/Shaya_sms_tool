@@ -304,7 +304,7 @@ const Dashboard = ({ onLogout }) => {
                     ) : (
                       <>
                         <span className="upload-icon">📄</span>
-                        <span>Choose CSV file or drag here</span>
+                        <span>Choose CSV file</span>
                         <small>First column should contain phone numbers</small>
                       </>
                     )}

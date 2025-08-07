@@ -56,10 +56,20 @@ const Login = ({ onLogin }) => {
 
     setIsLoading(true);
     
-    // Simulate API call
+    // Demo credentials check
+    const demoPhone = '09127726273';
+    const demoPassword = 'doosetdaram';
+    
+    // Simulate API call with demo credentials
     setTimeout(() => {
       setIsLoading(false);
-      onLogin(true);
+      if (formData.phoneNumber === demoPhone && formData.password === demoPassword) {
+        onLogin(true);
+      } else {
+        setErrors({
+          phoneNumber: 'Invalid credentials. Use demo: 09127726273 / doosetdaram'
+        });
+      }
     }, 1000);
   };
 
@@ -124,6 +134,10 @@ const Login = ({ onLogin }) => {
             )}
           </button>
         </form>
+
+        <div className="login-footer">
+          <p>Demo credentials: 09127726273 / doosetdaram</p>
+        </div>
 
 
       </div>
