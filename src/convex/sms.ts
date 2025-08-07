@@ -256,6 +256,20 @@ export const sendSMSBatch = action({
     tag: v.string(),
   },
   handler: async (ctx, args) => {
+    console.log(`Sending SMS batch ${args.batchNumber}: ${args.phoneNumbers.length} numbers`);
+    
+    // Check if campaign exists and is not cancelled
+    const campaign = await ctx.runQuery(api.sms.getCampaign, { campaignId: args.campaignId });
+    if (!campaign) {
+      console.log(`Campaign ${args.campaignId} not found, skipping SMS batch`);
+      return { success: false, message: "Campaign not found" };
+    }
+    
+    if (campaign.status === "cancelled") {
+      console.log(`Campaign ${args.campaignId} has been cancelled, skipping SMS batch`);
+      return { success: false, message: "Campaign has been cancelled" };
+    }
+    
     const startTime = Date.now();
     const sourceNumber = "981000007711";
     const messageLength = args.message.length;
@@ -467,10 +481,17 @@ export const cancelCampaign = mutation({
       throw new Error("Cannot cancel completed, failed, or already cancelled campaigns");
     }
 
+    // Note: Scheduled functions will be checked for cancellation status when they execute
+    // This prevents them from running if the campaign is cancelled
+
     await ctx.db.patch(args.campaignId, {
       status: "cancelled",
       completedAt: Date.now(),
     });
+
+    return {
+      message: "Campaign cancelled successfully. Scheduled functions will be checked for cancellation status when they execute."
+    };
   },
 });
 

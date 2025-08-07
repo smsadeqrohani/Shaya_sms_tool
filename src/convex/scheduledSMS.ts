@@ -1,4 +1,4 @@
-import { internalMutation, internalAction } from "./_generated/server";
+import { internalMutation, internalAction, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
@@ -13,6 +13,19 @@ export const sendScheduledSMS = internalAction({
   },
   handler: async (ctx, args): Promise<any> => {
     console.log(`Executing scheduled SMS for campaign ${args.campaignId}, batch ${args.batchNumber}`);
+    
+    // Check if campaign exists and is not cancelled
+    const campaign = await ctx.runQuery(internal.scheduledSMS.getCampaign, { campaignId: args.campaignId });
+    if (!campaign) {
+      console.log(`Campaign ${args.campaignId} not found, skipping scheduled SMS`);
+      return { success: false, message: "Campaign not found" };
+    }
+    
+    if (campaign.status === "cancelled") {
+      console.log(`Campaign ${args.campaignId} has been cancelled, skipping scheduled SMS`);
+      return { success: false, message: "Campaign has been cancelled" };
+    }
+    
     console.log(`Scheduled SMS would send to ${args.phoneNumbers.length} numbers:`, args.phoneNumbers);
     console.log(`Message: ${args.message}`);
     console.log(`Tag: ${args.tag}`);
@@ -396,6 +409,14 @@ export const updateCampaignStatus = internalMutation({
     }
 
     await ctx.db.patch(args.campaignId, updateData);
+  },
+});
+
+// Helper query to get campaign
+export const getCampaign = internalQuery({
+  args: { campaignId: v.id("campaigns") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.campaignId);
   },
 });
 

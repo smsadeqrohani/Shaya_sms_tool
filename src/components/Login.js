@@ -4,17 +4,14 @@ import { api } from '../convex/_generated/api';
 import './Login.css';
 
 const Login = ({ onLogin }) => {
-  const [isSignUp, setIsSignUp] = useState(false);
   const [formData, setFormData] = useState({
     phoneNumber: '',
-    password: '',
-    name: ''
+    password: ''
   });
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
   const loginMutation = useMutation(api.auth.login);
-  const signUpMutation = useMutation(api.auth.signUp);
 
   const validateForm = () => {
     const newErrors = {};
@@ -32,11 +29,6 @@ const Login = ({ onLogin }) => {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 8) {
       newErrors.password = 'Password must be at least 8 characters long';
-    }
-
-    // Name validation for sign up
-    if (isSignUp && !formData.name.trim()) {
-      newErrors.name = 'Name is required';
     }
 
     setErrors(newErrors);
@@ -69,40 +61,20 @@ const Login = ({ onLogin }) => {
     setIsLoading(true);
     
     try {
-      let user;
-      
-      if (isSignUp) {
-        user = await signUpMutation({
-          phoneNumber: formData.phoneNumber,
-          password: formData.password,
-          name: formData.name
-        });
-      } else {
-        user = await loginMutation({
-          phoneNumber: formData.phoneNumber,
-          password: formData.password
-        });
-      }
+      const user = await loginMutation({
+        phoneNumber: formData.phoneNumber,
+        password: formData.password
+      });
       
       onLogin(true, user);
     } catch (error) {
-      console.error(isSignUp ? 'Sign up error:' : 'Login error:', error);
+      console.error('Login error:', error);
       setErrors({
-        general: error.message || (isSignUp ? 'Sign up failed' : 'Login failed')
+        general: error.message || 'Login failed'
       });
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const toggleMode = () => {
-    setIsSignUp(!isSignUp);
-    setFormData({
-      phoneNumber: '',
-      password: '',
-      name: ''
-    });
-    setErrors({});
   };
 
   return (
@@ -114,26 +86,6 @@ const Login = ({ onLogin }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
-          {isSignUp && (
-            <div className="input-group">
-              <label htmlFor="name" className="input-label">
-                Full Name
-              </label>
-              <input
-                type="text"
-                id="name"
-                name="name"
-                value={formData.name}
-                onChange={handleInputChange}
-                className={`input-field ${errors.name ? 'error' : ''}`}
-                placeholder="Enter your full name"
-              />
-              {errors.name && (
-                <span className="error-message">{errors.name}</span>
-              )}
-            </div>
-          )}
-
           <div className="input-group">
             <label htmlFor="phoneNumber" className="input-label">
               Phone Number
@@ -183,23 +135,13 @@ const Login = ({ onLogin }) => {
             {isLoading ? (
               <>
                 <div className="spinner"></div>
-                {isSignUp ? 'Creating Account...' : 'Signing In...'}
+                Signing In...
               </>
             ) : (
-              isSignUp ? 'Sign Up' : 'Sign In'
+              'Sign In'
             )}
           </button>
         </form>
-
-        <div className="login-footer">
-          <button
-            type="button"
-            className="btn btn-link toggle-btn"
-            onClick={toggleMode}
-          >
-            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-          </button>
-        </div>
       </div>
     </div>
   );

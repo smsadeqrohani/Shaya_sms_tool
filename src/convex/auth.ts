@@ -35,6 +35,63 @@ export const signUp = mutation({
   },
 });
 
+// Create new user (admin function)
+export const createUser = mutation({
+  args: {
+    phoneNumber: v.string(),
+    password: v.string(),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Check if user already exists
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_phone", (q) => q.eq("phoneNumber", args.phoneNumber))
+      .first();
+
+    if (existingUser) {
+      throw new Error("User already exists with this phone number");
+    }
+
+    // Create new user
+    const userId = await ctx.db.insert("users", {
+      phoneNumber: args.phoneNumber,
+      password: args.password,
+      name: args.name,
+      createdAt: Date.now(),
+    });
+
+    return {
+      _id: userId,
+      phoneNumber: args.phoneNumber,
+      name: args.name,
+    };
+  },
+});
+
+// Get all users
+export const getAllUsers = query({
+  handler: async (ctx) => {
+    return await ctx.db.query("users").collect();
+  },
+});
+
+// Get user by ID
+export const getUserById = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId);
+  },
+});
+
+// Delete user
+export const deleteUser = mutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.userId);
+  },
+});
+
 // Login function
 export const login = mutation({
   args: {

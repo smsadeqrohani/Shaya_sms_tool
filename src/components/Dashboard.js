@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useAction } from 'convex/react';
+import { useMutation, useAction, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import Papa from 'papaparse';
 import PersianDatePicker from './PersianDatePicker';
@@ -59,6 +59,16 @@ const Dashboard = ({ onLogout, currentUser }) => {
   const [logs, setLogs] = useState([]);
   const fileInputRef = useRef(null);
 
+  // User management state
+  const [showUserManagement, setShowUserManagement] = useState(false);
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [newUserData, setNewUserData] = useState({
+    phoneNumber: '',
+    password: '',
+    name: ''
+  });
+  const [userErrors, setUserErrors] = useState({});
+
   // Debug logging
   console.log('Dashboard component rendered with:', { currentUser });
 
@@ -66,6 +76,11 @@ const Dashboard = ({ onLogout, currentUser }) => {
   const createCampaignMutation = useMutation(api.sms.createCampaign);
   const sendSMSBatchAction = useAction(api.sms.sendSMSBatch);
   const updateCampaignStatusMutation = useMutation(api.sms.updateCampaignStatus);
+
+  // User management queries and mutations
+  const allUsers = useQuery(api.auth.getAllUsers);
+  const createUserMutation = useMutation(api.auth.createUser);
+  const deleteUserMutation = useMutation(api.auth.deleteUser);
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
@@ -308,6 +323,69 @@ const Dashboard = ({ onLogout, currentUser }) => {
     setLogs([]);
   };
 
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    
+    // Validate form
+    const newErrors = {};
+    const phoneRegex = /^09\d{9}$/;
+    
+    if (!newUserData.phoneNumber) {
+      newErrors.phoneNumber = 'Phone number is required';
+    } else if (!phoneRegex.test(newUserData.phoneNumber)) {
+      newErrors.phoneNumber = 'Phone number must be in format 09xxxxxxxxx';
+    }
+
+    if (!newUserData.password) {
+      newErrors.password = 'Password is required';
+    } else if (newUserData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters long';
+    }
+
+    if (!newUserData.name.trim()) {
+      newErrors.name = 'Name is required';
+    }
+
+    setUserErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      return;
+    }
+
+    try {
+      await createUserMutation({
+        phoneNumber: newUserData.phoneNumber,
+        password: newUserData.password,
+        name: newUserData.name
+      });
+      
+      setNewUserData({ phoneNumber: '', password: '', name: '' });
+      setShowCreateUser(false);
+      setUserErrors({});
+    } catch (error) {
+      setUserErrors({ general: error.message });
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (window.confirm('Are you sure you want to delete this user?')) {
+      try {
+        await deleteUserMutation({ userId });
+      } catch (error) {
+        alert('Error deleting user: ' + error.message);
+      }
+    }
+  };
+
+  const formatDate = (timestamp) => {
+    return new Date(timestamp).toLocaleDateString('fa-IR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   return (
     <div className="dashboard-container">
       <header className="dashboard-header glass">
@@ -318,6 +396,9 @@ const Dashboard = ({ onLogout, currentUser }) => {
               {currentUser?.name || currentUser?.phoneNumber} ({currentUser?.phoneNumber})
             </span>
             <div className="nav-buttons">
+              <button onClick={() => setShowUserManagement(!showUserManagement)} className="btn btn-outline btn-sm">
+                👥 Users
+              </button>
               <button onClick={() => navigate('/reports')} className="btn btn-outline btn-sm">
                 📊 Reports
               </button>
@@ -330,196 +411,353 @@ const Dashboard = ({ onLogout, currentUser }) => {
       </header>
 
       <main className="dashboard-main">
-        <div className="dashboard-layout">
-          {/* Logs Lane */}
-          <div className="logs-lane">
-            <div className="card glass logs-section">
-              <div className="logs-header">
-                <h2 className="card-title">📋 Activity Logs</h2>
-                <button onClick={clearLogs} className="btn btn-outline btn-sm">
-                  Clear Logs
-                </button>
-              </div>
-              
-              <div className="logs-container">
-                {logs.length === 0 ? (
-                  <p className="no-logs">No activity yet. Upload a file and send SMS to see logs.</p>
-                ) : (
-                  logs.map((log, index) => (
-                    <div key={index} className="log-entry">
-                      <span className="log-time">{log.timestamp}</span>
-                      <span className="log-message">{log.message}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Form Lane */}
-          <div className="form-lane">
-            {/* Upload Section */}
-            <div className="card glass">
-              <h2 className="card-title">📁 Upload CSV File</h2>
-              <div className="upload-section">
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileUpload}
-                  ref={fileInputRef}
-                  className="file-input"
-                  id="csv-upload"
-                />
-                <label htmlFor="csv-upload" className="file-input-label">
-                  <div className="upload-area">
-                    {csvData ? (
-                      <>
-                        <span className="upload-icon">✅</span>
-                        <span>File uploaded: {csvData.fileName}</span>
-                        <small>{csvData.totalCount} phone numbers loaded</small>
-                      </>
-                    ) : (
-                      <>
-                        <span className="upload-icon">📄</span>
-                        <span>Choose CSV file</span>
-                        <small>First column should contain phone numbers</small>
-                      </>
-                    )}
-                  </div>
-                </label>
-              </div>
+        {showUserManagement ? (
+          // User Management Section
+          <div className="user-management-section">
+            <div className="section-header">
+              <h2>👥 User Management</h2>
+              <button 
+                onClick={() => setShowUserManagement(false)} 
+                className="btn btn-outline btn-sm"
+              >
+                ← Back to Dashboard
+              </button>
             </div>
 
-            {/* Tag Input */}
-            <div className="card glass">
-              <h2 className="card-title">🏷️ Tag</h2>
-              <div className="input-group">
-                <input
-                  type="text"
-                  value={tag}
-                  onChange={(e) => setTag(e.target.value)}
-                  className="input-field tag-input"
-                  placeholder="Enter a tag for this campaign"
-                />
-              </div>
-            </div>
-
-            {/* Message Editor */}
-            <div className="card glass">
-              <h2 className="card-title">💬 Message Content</h2>
-              <div className="editor-container">
-                <textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="پیام خود را اینجا بنویسید..."
-                  className="message-textarea"
-                  dir="rtl"
-                  rows={6}
-                />
-                <div className="message-info">
-                  <span className="char-count">
-                    Characters: {message.length}
-                  </span>
-                  <span className="sms-count">
-                    SMS Count: {calculateSMSCount(message)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Schedule Picker */}
-            <div className="card glass">
-              <h2 className="card-title">📅 Schedule SMS</h2>
-              <div className="schedule-container">
-                <div className="schedule-options">
-                  <div className="schedule-option">
-                    <label className="schedule-label">
-                      <input
-                        type="radio"
-                        name="scheduleType"
-                        value="now"
-                        defaultChecked
-                        onChange={() => setScheduledDateTime(null)}
-                      />
-                      <span>Send Now</span>
-                    </label>
-                  </div>
-                  <div className="schedule-option">
-                    <label className="schedule-label">
-                      <input
-                        type="radio"
-                        name="scheduleType"
-                        value="later"
-                        onChange={() => {
-                          // Set default to current date and time
-                          const now = new Date();
-                          setScheduledDateTime(now);
-                        }}
-                      />
-                      <span>Schedule for Later</span>
-                    </label>
-                  </div>
-                </div>
-                
-                {scheduledDateTime && (
-                  <div className="schedule-inputs">
-                    <div className="input-group">
-                      <label className="input-label">انتخاب تاریخ و زمان:</label>
-                      <PersianDatePicker
-                        value={scheduledDateTime}
-                        onChange={setScheduledDateTime}
-                        placeholder="انتخاب تاریخ و زمان"
-                      />
-                    </div>
-                    <div className="schedule-preview">
-                      Scheduled for: {scheduledDateTime.toLocaleString('fa-IR')}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="card glass">
-              <h2 className="card-title">🚀 Actions</h2>
-              <div className="action-buttons">
-                <button
-                  onClick={handleSendSMS}
-                  disabled={isLoading || !csvData || !message.trim()}
-                  className="btn btn-primary send-btn"
+            <div className="user-management-content">
+              <div className="user-actions">
+                <button 
+                  onClick={() => setShowCreateUser(true)} 
+                  className="btn btn-primary"
                 >
-                  {isLoading ? (
-                    <>
-                      <div className="spinner"></div>
-                      Sending...
-                    </>
-                  ) : (
-                    'Send SMS'
-                  )}
-                </button>
-                
-                <button
-                  onClick={clearData}
-                  className="btn btn-outline clear-btn"
-                >
-                  Clear Data
+                  ➕ Create New User
                 </button>
               </div>
-              
-              {isLoading && progress.total > 0 && (
-                <div className="progress-bar">
-                  <div 
-                    className="progress-fill"
-                    style={{ width: `${(progress.current / progress.total) * 100}%` }}
-                  ></div>
-                  <span className="progress-text">
-                    {progress.current} / {progress.total} batches
-                  </span>
+
+              {showCreateUser && (
+                <div className="create-user-modal">
+                  <div className="modal-content">
+                    <div className="modal-header">
+                      <h3>Create New User</h3>
+                      <button 
+                        onClick={() => {
+                          setShowCreateUser(false);
+                          setNewUserData({ phoneNumber: '', password: '', name: '' });
+                          setUserErrors({});
+                        }} 
+                        className="modal-close"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    
+                    <form onSubmit={handleCreateUser} className="create-user-form">
+                      <div className="input-group">
+                        <label htmlFor="newUserName" className="input-label">Full Name</label>
+                        <input
+                          type="text"
+                          id="newUserName"
+                          value={newUserData.name}
+                          onChange={(e) => setNewUserData(prev => ({ ...prev, name: e.target.value }))}
+                          className={`input-field ${userErrors.name ? 'error' : ''}`}
+                          placeholder="Enter full name"
+                        />
+                        {userErrors.name && <span className="error-message">{userErrors.name}</span>}
+                      </div>
+
+                      <div className="input-group">
+                        <label htmlFor="newUserPhone" className="input-label">Phone Number</label>
+                        <input
+                          type="tel"
+                          id="newUserPhone"
+                          value={newUserData.phoneNumber}
+                          onChange={(e) => setNewUserData(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                          className={`input-field ${userErrors.phoneNumber ? 'error' : ''}`}
+                          placeholder="09xxxxxxxxx"
+                          maxLength="11"
+                        />
+                        {userErrors.phoneNumber && <span className="error-message">{userErrors.phoneNumber}</span>}
+                      </div>
+
+                      <div className="input-group">
+                        <label htmlFor="newUserPassword" className="input-label">Password</label>
+                        <input
+                          type="password"
+                          id="newUserPassword"
+                          value={newUserData.password}
+                          onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
+                          className={`input-field ${userErrors.password ? 'error' : ''}`}
+                          placeholder="Enter password (min 8 characters)"
+                        />
+                        {userErrors.password && <span className="error-message">{userErrors.password}</span>}
+                      </div>
+
+                      {userErrors.general && (
+                        <div className="error-message general-error">{userErrors.general}</div>
+                      )}
+
+                      <div className="form-actions">
+                        <button type="submit" className="btn btn-primary">
+                          Create User
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            setShowCreateUser(false);
+                            setNewUserData({ phoneNumber: '', password: '', name: '' });
+                            setUserErrors({});
+                          }} 
+                          className="btn btn-outline"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </div>
                 </div>
               )}
+
+              <div className="users-list">
+                <h3>All Users ({allUsers?.length || 0})</h3>
+                {allUsers && allUsers.length > 0 ? (
+                  <div className="users-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Phone Number</th>
+                          <th>Created</th>
+                          <th>Last Login</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allUsers.map((user) => (
+                          <tr key={user._id}>
+                            <td>{user.name || 'N/A'}</td>
+                            <td>{user.phoneNumber}</td>
+                            <td>{formatDate(user.createdAt)}</td>
+                            <td>{user.lastLogin ? formatDate(user.lastLogin) : 'Never'}</td>
+                            <td>
+                              {user._id !== currentUser._id && (
+                                <button 
+                                  onClick={() => handleDeleteUser(user._id)}
+                                  className="btn btn-outline btn-sm delete-btn"
+                                  title="Delete User"
+                                >
+                                  🗑️ Delete
+                                </button>
+                              )}
+                              {user._id === currentUser._id && (
+                                <span className="current-user-badge">Current User</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="no-users">
+                    <p>No users found. Create the first user above.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          // Main Dashboard Content
+          <div className="dashboard-layout">
+            {/* Logs Lane */}
+            <div className="logs-lane">
+              <div className="card glass logs-section">
+                <div className="logs-header">
+                  <h2 className="card-title">📋 Activity Logs</h2>
+                  <button onClick={clearLogs} className="btn btn-outline btn-sm">
+                    Clear Logs
+                  </button>
+                </div>
+                
+                <div className="logs-container">
+                  {logs.length === 0 ? (
+                    <p className="no-logs">No activity yet. Upload a file and send SMS to see logs.</p>
+                  ) : (
+                    logs.map((log, index) => (
+                      <div key={index} className="log-entry">
+                        <span className="log-time">{log.timestamp}</span>
+                        <span className="log-message">{log.message}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Form Lane */}
+            <div className="form-lane">
+              {/* Upload Section */}
+              <div className="card glass">
+                <h2 className="card-title">📁 Upload CSV File</h2>
+                <div className="upload-section">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileUpload}
+                    ref={fileInputRef}
+                    className="file-input"
+                    id="csv-upload"
+                  />
+                  <label htmlFor="csv-upload" className="file-input-label">
+                    <div className="upload-area">
+                      {csvData ? (
+                        <>
+                          <span className="upload-icon">✅</span>
+                          <span>File uploaded: {csvData.fileName}</span>
+                          <small>{csvData.totalCount} phone numbers loaded</small>
+                        </>
+                      ) : (
+                        <>
+                          <span className="upload-icon">📄</span>
+                          <span>Choose CSV file</span>
+                          <small>First column should contain phone numbers</small>
+                        </>
+                      )}
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Tag Input */}
+              <div className="card glass">
+                <h2 className="card-title">🏷️ Tag</h2>
+                <div className="input-group">
+                  <input
+                    type="text"
+                    value={tag}
+                    onChange={(e) => setTag(e.target.value)}
+                    className="input-field tag-input"
+                    placeholder="Enter a tag for this campaign"
+                  />
+                </div>
+              </div>
+
+              {/* Message Editor */}
+              <div className="card glass">
+                <h2 className="card-title">💬 Message Content</h2>
+                <div className="editor-container">
+                  <textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="پیام خود را اینجا بنویسید..."
+                    className="message-textarea"
+                    dir="rtl"
+                    rows={6}
+                  />
+                  <div className="message-info">
+                    <span className="char-count">
+                      Characters: {message.length}
+                    </span>
+                    <span className="sms-count">
+                      SMS Count: {calculateSMSCount(message)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Schedule Picker */}
+              <div className="card glass">
+                <h2 className="card-title">📅 Schedule SMS</h2>
+                <div className="schedule-container">
+                  <div className="schedule-options">
+                    <div className="schedule-option">
+                      <label className="schedule-label">
+                        <input
+                          type="radio"
+                          name="scheduleType"
+                          value="now"
+                          defaultChecked
+                          onChange={() => setScheduledDateTime(null)}
+                        />
+                        <span>Send Now</span>
+                      </label>
+                    </div>
+                    <div className="schedule-option">
+                      <label className="schedule-label">
+                        <input
+                          type="radio"
+                          name="scheduleType"
+                          value="later"
+                          onChange={() => {
+                            // Set default to current date and time
+                            const now = new Date();
+                            setScheduledDateTime(now);
+                          }}
+                        />
+                        <span>Schedule for Later</span>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  {scheduledDateTime && (
+                    <div className="schedule-inputs">
+                      <div className="input-group">
+                        <label className="input-label">انتخاب تاریخ و زمان:</label>
+                        <PersianDatePicker
+                          value={scheduledDateTime}
+                          onChange={setScheduledDateTime}
+                          placeholder="انتخاب تاریخ و زمان"
+                        />
+                      </div>
+                      <div className="schedule-preview">
+                        Scheduled for: {scheduledDateTime.toLocaleString('fa-IR')}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="card glass">
+                <h2 className="card-title">🚀 Actions</h2>
+                <div className="action-buttons">
+                  <button
+                    onClick={handleSendSMS}
+                    disabled={isLoading || !csvData || !message.trim()}
+                    className="btn btn-primary send-btn"
+                  >
+                    {isLoading ? (
+                      <>
+                        <div className="spinner"></div>
+                        Sending...
+                      </>
+                    ) : (
+                      'Send SMS'
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={clearData}
+                    className="btn btn-outline clear-btn"
+                  >
+                    Clear Data
+                  </button>
+                </div>
+                
+                {isLoading && progress.total > 0 && (
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill"
+                      style={{ width: `${(progress.current / progress.total) * 100}%` }}
+                    ></div>
+                    <span className="progress-text">
+                      {progress.current} / {progress.total} batches
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
