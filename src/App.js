@@ -1,18 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import Reports from './components/Reports';
+import DatabaseInitializer from './components/DatabaseInitializer';
 import './App.css';
+
+const convex = new ConvexReactClient(process.env.REACT_APP_CONVEX_URL);
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
-  const handleLogin = (success) => {
+  // Debug logging
+  useEffect(() => {
+    console.log('Auth state changed:', { isAuthenticated, currentUser });
+  }, [isAuthenticated, currentUser]);
+
+  const handleLogin = (success, user) => {
+    console.log('Login attempt:', { success, user });
     setIsAuthenticated(success);
+    setCurrentUser(user);
   };
 
   const handleLogout = () => {
+    console.log('Logout called');
     setIsAuthenticated(false);
+    setCurrentUser(null);
   };
 
   const router = createBrowserRouter([
@@ -22,7 +37,11 @@ function App() {
     },
     {
       path: "/dashboard", 
-      element: isAuthenticated ? <Dashboard onLogout={handleLogout} /> : <Navigate to="/login" replace />
+      element: isAuthenticated ? <Dashboard onLogout={handleLogout} currentUser={currentUser} /> : <Navigate to="/login" replace />
+    },
+    {
+      path: "/reports",
+      element: isAuthenticated ? <Reports onLogout={handleLogout} currentUser={currentUser} /> : <Navigate to="/login" replace />
     },
     {
       path: "/",
@@ -36,9 +55,12 @@ function App() {
   });
 
   return (
-    <div className="App">
-      <RouterProvider router={router} />
-    </div>
+    <ConvexProvider client={convex}>
+      <div className="App">
+        <DatabaseInitializer />
+        <RouterProvider router={router} />
+      </div>
+    </ConvexProvider>
   );
 }
 

@@ -19,6 +19,22 @@
   margin: 0 auto;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.user-info {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.nav-buttons {
+  display: flex;
+  gap: 10px;
+}
+
 .dashboard-title {
   font-size: 2rem;
   font-weight: 700;
@@ -120,63 +136,50 @@
   min-height: 200px;
 }
 
-.message-editor {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.message-editor .ql-toolbar {
-  background: rgba(255, 255, 255, 0.1);
-  border-top-left-radius: 8px;
-  border-top-right-radius: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.message-editor .ql-container {
-  border-bottom-left-radius: 8px;
-  border-bottom-right-radius: 8px;
+.message-textarea {
+  width: 100%;
+  min-height: 150px;
   background: rgba(255, 255, 255, 0.05);
-  min-height: 150px;
-}
-
-.message-editor .ql-editor {
-  color: var(--text-primary);
-  font-size: 16px;
-}
-
-.message-editor .ql-editor.ql-blank::before {
-  color: rgba(255, 255, 255, 0.5);
-  font-style: italic;
-}
-
-/* Fix React Quill warnings */
-.message-editor .ql-editor {
-  min-height: 150px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 16px;
   color: var(--text-primary);
   font-size: 16px;
   line-height: 1.5;
   direction: rtl;
   text-align: right;
   font-family: 'Tahoma', 'Arial', sans-serif;
+  resize: vertical;
+  transition: all 0.3s ease;
 }
 
-.message-editor .ql-toolbar.ql-snow {
-  border-color: rgba(255, 255, 255, 0.2);
+.message-textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 2px rgba(168, 35, 60, 0.2);
 }
 
-.message-editor .ql-container.ql-snow {
-  border-color: rgba(255, 255, 255, 0.2);
+.message-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
 }
 
-.message-editor .ql-toolbar button,
-.message-editor .ql-toolbar .ql-picker {
-  color: var(--text-primary);
+.message-info {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
-.message-editor .ql-toolbar button:hover,
-.message-editor .ql-toolbar .ql-picker:hover {
-  color: var(--primary-color);
+.char-count {
+  color: var(--text-secondary);
+}
+
+.sms-count {
+  color: var(--secondary-color);
+  font-weight: 500;
 }
 
 /* Action Buttons */

@@ -4,12 +4,15 @@ A modern, dark-themed web application for sending SMS messages in batches using 
 
 ## Features
 
-- 🔐 **Authentication**: Phone number format validation (09xxxxxxx) with password requirements
+- 🔐 **Authentication**: Real user management with phone number validation and admin roles
 - 📁 **CSV Upload**: Upload CSV files with phone numbers in the first column
 - ✍️ **Rich Text Editor**: HTML editor with formatting options for message content
 - 🏷️ **Tagging System**: Add tags to organize your SMS campaigns
 - 📱 **Batch Processing**: Send SMS in batches of 100 (configurable)
 - 📊 **Real-time Logs**: Monitor SMS sending progress and status
+- 🗄️ **Backend Database**: Convex backend with comprehensive logging and statistics
+- 👥 **User Management**: Admin panel for creating and managing users
+- 📈 **Reports**: Detailed campaign reports with Persian dates and statistics
 - 🌙 **Dark Mode**: Beautiful dark theme with glass effects
 - 📱 **Responsive Design**: Works perfectly on desktop and mobile devices
 
@@ -32,12 +35,19 @@ cd Shaya_sms_tool
 npm install
 ```
 
-3. Start the development server:
+3. Start the development server (runs both frontend and backend):
 ```bash
-npm start
+npm run dev
+```
+
+Or use the convenience script:
+```bash
+./dev.sh
 ```
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+**Note**: The `npm run dev` command starts both the React frontend and Convex backend simultaneously. The backend will be available at the URL shown in the terminal.
 
 ## Usage
 
@@ -63,6 +73,13 @@ PhoneNumber
 3. **Add Tag**: Optionally add a tag for campaign tracking
 4. **Send**: Click "Send SMS" to start batch processing
 
+### Application Routes
+- **`/login`**: Authentication page
+- **`/dashboard`**: Main SMS sending interface
+- **`/admin`**: User management (admin users only)
+- **`/reports`**: Campaign reports and analytics
+- **`/`**: Redirects to login page
+
 ### API Configuration
 The application uses the OkitSMS API with the following configuration:
 - **Endpoint**: `https://api.okitsms.com/api/v1/sms/send/1tn`
@@ -78,7 +95,17 @@ src/
 │   ├── Login.js          # Authentication component
 │   ├── Login.css         # Login styling
 │   ├── Dashboard.js      # Main SMS sending interface
-│   └── Dashboard.css     # Dashboard styling
+│   ├── Dashboard.css     # Dashboard styling
+│   ├── AdminPanel.js     # User management interface
+│   ├── AdminPanel.css    # Admin panel styling
+│   ├── Reports.js        # Campaign reports interface
+│   └── Reports.css       # Reports styling
+├── convex/
+│   ├── schema.ts         # Database schema
+│   ├── auth.ts           # Authentication functions
+│   ├── sms.ts            # SMS and campaign functions
+│   ├── setup.ts          # Setup functions
+│   └── init.ts           # Initialization script
 ├── App.js               # Main app component with routing
 ├── App.css              # Global app styling
 ├── index.js             # React entry point
@@ -91,7 +118,7 @@ src/
 - **React Router**: Client-side routing
 - **React Quill**: Rich text editor with formatting options
 - **Papa Parse**: CSV parsing library
-- **Axios**: HTTP client for API calls
+- **Convex**: Backend database and API
 - **CSS3**: Modern styling with glass effects and animations
 
 ## Features in Detail
@@ -127,22 +154,61 @@ src/
 - Scrollable log container
 - Clear all functionality
 
+### User Management
+- **Admin Panel**: Access via `/admin` route (admin users only)
+- **Create Users**: Add new admin users with phone number and password
+- **Password Management**: Change passwords for existing users
+- **User List**: View all registered users with creation dates
+- **Role-based Access**: Admin users have access to all features
+
+### Campaign Reports
+- **Reports Page**: Access via `/reports` route
+- **Campaign History**: View all campaigns with statistics
+- **Detailed Analytics**: Success rates, response times, error analysis
+- **Batch Logs**: Individual batch performance and error details
+- **Persian Dates**: All dates displayed in Persian calendar format
+- **Real-time Data**: Live updates from Convex backend
+
+## Backend Features
+
+### Database Schema
+The application uses Convex as a backend with the following data models:
+
+- **Users**: Phone number, password, admin role, creation date
+- **Campaigns**: Tag, message, total numbers, batches, status, Persian dates
+- **SMS Logs**: Detailed batch logs with response times and error tracking
+- **Campaign Stats**: Aggregated statistics for quick reporting
+
+### User Management
+- **Admin Panel**: Create and manage admin users
+- **Password Management**: Change passwords for existing users
+- **Role-based Access**: Admin users can access all features
+- **Session Management**: Secure login with phone number validation
+
+### Campaign Tracking
+- **Comprehensive Logging**: Every SMS batch is logged with detailed information
+- **Error Tracking**: HTTP status codes, API responses, and error messages
+- **Performance Metrics**: Response times and success rates
+- **Persian Dates**: All dates displayed in Persian calendar format
+
+### Reporting System
+- **Campaign History**: View all campaigns with statistics
+- **Detailed Reports**: Success rates, response times, and error analysis
+- **Batch Logs**: Individual batch performance and error details
+- **Real-time Updates**: Live data from Convex backend
+
 ## API Integration
 
-The application integrates with the OkitSMS API:
+The application integrates with the OkitSMS API through the Convex backend:
 
 ```javascript
-// Example API call
-const response = await axios.post('https://api.okitsms.com/api/v1/sms/send/1tn', {
-  SourceNumber: "981000007711",
-  DestinationNumbers: ["09123456789,09876543210"],
-  Message: "Your message content",
-  UserTag: "campaign-tag"
-}, {
-  headers: {
-    'Content-Type': 'application/json',
-    'X-API-KEY': 'CV@%OR!pM4p!jGp5j&kBFBYmAtEh#%Sr'
-  }
+// SMS sending is handled by Convex backend
+const result = await sendSMSBatchMutation({
+  campaignId,
+  batchNumber: i + 1,
+  phoneNumbers: batch,
+  message: plainTextMessage,
+  tag
 });
 ```
 
@@ -185,9 +251,45 @@ const response = await axios.post('YOUR_API_ENDPOINT', {
 
 ## Development
 
+### Quick Start
+```bash
+# Install dependencies
+npm install
+
+# Start both frontend and backend
+npm run dev
+
+# Open http://localhost:3000 in your browser
+```
+
+### Development Workflow
+1. **Frontend**: React development server runs on `http://localhost:3000`
+2. **Backend**: Convex development server runs on the URL shown in terminal
+3. **Hot Reload**: Both frontend and backend support hot reloading
+4. **Database**: Convex provides a development database automatically
+5. **Concurrent Development**: Both servers start simultaneously with `npm run dev`
+
+### Development Commands
+```bash
+# Start both frontend and backend
+npm run dev
+
+# Start only frontend
+npm start
+
+# Start only backend
+npm run convex:dev
+
+# Deploy backend to production
+npm run convex:deploy
+```
+
 ### Available Scripts
 
-- `npm start`: Start development server
+- `npm run dev`: Start both frontend and backend development servers
+- `npm start`: Start React development server only
+- `npm run convex:dev`: Start Convex backend only
+- `npm run convex:deploy`: Deploy Convex functions to production
 - `npm build`: Build for production
 - `npm test`: Run tests
 - `npm eject`: Eject from Create React App
@@ -198,10 +300,42 @@ const response = await axios.post('YOUR_API_ENDPOINT', {
 - Functional components with hooks
 - CSS modules for component styling
 - Responsive design principles
+- TypeScript for Convex backend functions
 
 ## License
 
 This project is licensed under the MIT License.
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Port 3000 already in use**
+   ```bash
+   # Kill the process using port 3000
+   lsof -ti:3000 | xargs kill -9
+   ```
+
+2. **Convex backend not connecting**
+   - Check that the Convex URL in `.env.local` is correct
+   - Ensure Convex development server is running
+   - Try running `npm run convex:dev` separately
+
+3. **Database not initialized**
+   - Visit the admin panel at `/admin`
+   - Click "Create First Admin" to initialize the database
+
+4. **SMS API errors**
+   - Check the API key in `src/convex/sms.ts`
+   - Verify the OkitSMS API endpoint is accessible
+   - Check the logs in the Reports section
+
+### Development Tips
+
+- Use the browser's developer tools to check for console errors
+- Check the Convex dashboard for backend function logs
+- The Reports page shows detailed campaign and error logs
+- Admin panel allows you to manage users and reset passwords
 
 ## Support
 

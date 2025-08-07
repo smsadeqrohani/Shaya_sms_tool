@@ -1,11 +1,53 @@
 import React, { useState, useRef } from 'react';
-import ReactQuill from 'react-quill';
-import 'react-quill/dist/quill.snow.css';
+import { useNavigate } from 'react-router-dom';
+import { useMutation, useAction } from 'convex/react';
+import { api } from '../convex/_generated/api';
 import Papa from 'papaparse';
-import axios from 'axios';
 import './Dashboard.css';
 
-const Dashboard = ({ onLogout }) => {
+// Utility function to clean text (no longer needed for HTML conversion)
+const cleanText = (text) => {
+  if (!text) return '';
+  return text.trim();
+};
+
+// Function to calculate SMS count for Persian characters and emojis
+const calculateSMSCount = (text) => {
+  if (!text) return 0;
+  
+  let totalChars = 0;
+  
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    
+    // Check if character is an emoji (surrogate pair or emoji)
+    if (char.codePointAt(0) > 0xFFFF || 
+        (char.codePointAt(0) >= 0x1F600 && char.codePointAt(0) <= 0x1F64F) || // Emoticons
+        (char.codePointAt(0) >= 0x1F300 && char.codePointAt(0) <= 0x1F5FF) || // Misc Symbols and Pictographs
+        (char.codePointAt(0) >= 0x1F680 && char.codePointAt(0) <= 0x1F6FF) || // Transport and Map
+        (char.codePointAt(0) >= 0x1F1E0 && char.codePointAt(0) <= 0x1F1FF) || // Regional Indicator
+        (char.codePointAt(0) >= 0x2600 && char.codePointAt(0) <= 0x26FF) ||   // Misc Symbols
+        (char.codePointAt(0) >= 0x2700 && char.codePointAt(0) <= 0x27BF)) {    // Dingbats
+      totalChars += 10; // Emoji = 10 characters
+    } else if (char === ' ') {
+      totalChars += 1; // Space = 1 character
+    } else {
+      // Check if character is Persian or Arabic
+      const persianRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+      if (persianRegex.test(char)) {
+        totalChars += 1; // Persian/Arabic character = 1 character (70 chars per SMS)
+      } else {
+        totalChars += 1; // Other characters = 1 character
+      }
+    }
+  }
+  
+  // Calculate SMS count: 70 characters per SMS for Persian text
+  return Math.ceil(totalChars / 70);
+};
+
+const Dashboard = ({ onLogout, currentUser }) => {
+  const navigate = useNavigate();
   const [csvData, setCsvData] = useState(null);
   const [message, setMessage] = useState('');
   const [tag, setTag] = useState('');
@@ -14,6 +56,14 @@ const Dashboard = ({ onLogout }) => {
 
   const [logs, setLogs] = useState([]);
   const fileInputRef = useRef(null);
+
+  // Debug logging
+  console.log('Dashboard component rendered with:', { currentUser });
+
+  // Convex mutations and actions
+  const createCampaignMutation = useMutation(api.sms.createCampaign);
+  const sendSMSBatchAction = useAction(api.sms.sendSMSBatch);
+  const updateCampaignStatusMutation = useMutation(api.sms.updateCampaignStatus);
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
@@ -93,7 +143,7 @@ const Dashboard = ({ onLogout }) => {
     setLogs(prev => [...prev, logEntry]);
   };
 
-  const sendSMSBatch = async (numbers, batchSize = 100) => {
+  const sendSMSBatch = async (numbers, campaignId, batchSize = 100) => {
     console.log('Starting SMS batch sending...');
     console.log('Total numbers to send:', numbers.length);
     console.log('Batch size:', batchSize);
@@ -108,75 +158,38 @@ const Dashboard = ({ onLogout }) => {
     console.log('Created batches:', batches.length);
     setProgress({ current: 0, total: batches.length });
 
+    // Use message directly (no HTML conversion needed)
+    const plainTextMessage = cleanText(message);
+
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      const batchNumbers = batch.join(',');
       
       console.log(`Processing batch ${i + 1}/${batches.length}:`, batch);
-      console.log('Batch numbers string:', batchNumbers);
 
       try {
-        // Strip HTML tags and handle newlines for SMS
-        const plainTextMessage = message
-          .replace(/<\/p>/g, '\n')           // Convert </p> to newline
-          .replace(/<br\s*\/?>/g, '\n')      // Convert <br> to newline
-          .replace(/<[^>]*>/g, '')           // Remove all HTML tags
-          .replace(/&nbsp;/g, ' ')           // Replace &nbsp; with space
-          .replace(/&amp;/g, '&')            // Replace &amp; with &
-          .replace(/&lt;/g, '<')             // Replace &lt; with <
-          .replace(/&gt;/g, '>')             // Replace &gt; with >
-          .replace(/&quot;/g, '"')           // Replace &quot; with "
-          .replace(/&#39;/g, "'")            // Replace &#39; with '
-          .replace(/\n\s*\n/g, '\n')         // Remove empty lines
-          .trim();
-        
-        const payload = {
-          SourceNumber: "981000007711",
-          DestinationNumbers: batch,
-          Message: plainTextMessage,
-          UserTag: tag
-        };
-        
-        console.log('API payload:', payload);
-        console.log('Making API request to:', 'https://api.okitsms.com/api/v1/sms/send/1tn');
-
-        const response = await axios.post('https://api.okitsms.com/api/v1/sms/send/1tn', payload, {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': 'CV@%OR!pM4p!jGp5j&kBFBYmAtEh#%Sr'
-          }
+        const result = await sendSMSBatchAction({
+          campaignId,
+          batchNumber: i + 1,
+          phoneNumbers: batch,
+          message: plainTextMessage,
+          tag
         });
 
-        console.log('API response:', response.data);
-        
-        if (response.data) {
-          const httpStatusCode = response.status;
-          const apiStatusCode = response.data.statusCode;
-          const apiMessage = response.data.message;
-          const apiStatus = response.data.status;
-          
-          if (httpStatusCode === 200 && apiStatus === true) {
-            const logMessage = `Batch ${i + 1}/${batches.length}: SMS sent successfully to ${batch.length} numbers - HTTP: ${httpStatusCode}, API Status: ${apiStatus}`;
-            console.log(logMessage);
-            addLog(logMessage);
-          } else {
-            const logMessage = `Batch ${i + 1}/${batches.length}: API Error - HTTP: ${httpStatusCode}, API Status: ${apiStatus}, API Code: ${apiStatusCode}, Message: ${apiMessage}`;
-            console.log(logMessage);
-            addLog(logMessage);
-          }
+        if (result.success) {
+          const logMessage = `Batch ${i + 1}/${batches.length}: SMS sent successfully to ${batch.length} numbers`;
+          console.log(logMessage);
+          addLog(logMessage);
+        } else {
+          const logMessage = `Batch ${i + 1}/${batches.length}: Failed to send SMS - ${result.error}`;
+          console.log(logMessage);
+          addLog(logMessage);
         }
-              } catch (error) {
-          console.error('API error for batch', i + 1, ':', error);
-          console.error('Error details:', error.response?.data || error.message);
-          
-          const apiResponse = error.response?.data;
-          const apiStatusCode = apiResponse?.statusCode || 'N/A';
-          const apiMessage = apiResponse?.message || error.message;
-          
-          const errorMessage = `Batch ${i + 1}/${batches.length}: API Error - Status: ${apiStatusCode}, Message: ${apiMessage}`;
-          console.log(errorMessage);
-          addLog(errorMessage);
-        }
+      } catch (error) {
+        console.error('API error for batch', i + 1, ':', error);
+        const errorMessage = `Batch ${i + 1}/${batches.length}: Error - ${error.message}`;
+        console.log(errorMessage);
+        addLog(errorMessage);
+      }
 
       setProgress({ current: i + 1, total: batches.length });
       
@@ -213,7 +226,40 @@ const Dashboard = ({ onLogout }) => {
     setIsLoading(true);
     
     try {
-      await sendSMSBatch(csvData.numbers);
+      // Calculate batch information
+      const batchSize = 100;
+      const totalBatches = Math.ceil(csvData.numbers.length / batchSize);
+
+      // Use message directly (no HTML conversion needed)
+      const plainTextMessage = cleanText(message);
+      
+      // Create campaign
+      const campaignId = await createCampaignMutation({
+        tag: tag || 'untagged',
+        message: plainTextMessage,
+        totalNumbers: csvData.numbers.length,
+        totalBatches,
+        createdBy: currentUser._id
+      });
+
+      addLog(`Campaign created with ID: ${campaignId}`);
+
+      // Update campaign status to in progress
+      await updateCampaignStatusMutation({
+        campaignId,
+        status: 'in_progress'
+      });
+
+      // Send SMS batches
+      await sendSMSBatch(csvData.numbers, campaignId, batchSize);
+
+      // Update campaign status to completed
+      await updateCampaignStatusMutation({
+        campaignId,
+        status: 'completed'
+      });
+
+      addLog('Campaign completed successfully');
     } catch (error) {
       console.error('Error in handleSendSMS:', error);
       addLog(`Error: ${error.message}`);
@@ -246,13 +292,23 @@ const Dashboard = ({ onLogout }) => {
       <header className="dashboard-header glass">
         <div className="header-content">
           <h1 className="dashboard-title">Shaya SMS Tool</h1>
-          <button onClick={handleLogout} className="btn btn-outline">
-            Logout
-          </button>
+          <div className="header-actions">
+            <span className="user-info">
+              {currentUser?.name || currentUser?.phoneNumber} ({currentUser?.phoneNumber})
+            </span>
+            <div className="nav-buttons">
+              <button onClick={() => navigate('/reports')} className="btn btn-outline btn-sm">
+                📊 Reports
+              </button>
+              <button onClick={handleLogout} className="btn btn-outline">
+                Logout
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
-            <main className="dashboard-main">
+      <main className="dashboard-main">
         <div className="dashboard-layout">
           {/* Logs Lane */}
           <div className="logs-lane">
@@ -331,23 +387,22 @@ const Dashboard = ({ onLogout }) => {
             <div className="card glass">
               <h2 className="card-title">💬 Message Content</h2>
               <div className="editor-container">
-                              <ReactQuill
-                theme="snow"
-                value={message}
-                onChange={setMessage}
-                placeholder="پیام خود را اینجا بنویسید..."
-                modules={{
-                  toolbar: [
-                    [{ 'header': [1, 2, false] }],
-                    ['bold', 'italic', 'underline'],
-                    ['link', 'image'],
-                    ['clean']
-                  ]
-                }}
-                className="message-editor"
-                preserveWhitespace={true}
-                dir="rtl"
-              />
+                <textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="پیام خود را اینجا بنویسید..."
+                  className="message-textarea"
+                  dir="rtl"
+                  rows={6}
+                />
+                <div className="message-info">
+                  <span className="char-count">
+                    Characters: {message.length}
+                  </span>
+                  <span className="sms-count">
+                    SMS Count: {calculateSMSCount(message)}
+                  </span>
+                </div>
               </div>
             </div>
 

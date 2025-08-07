@@ -1,13 +1,20 @@
 import React, { useState } from 'react';
+import { useMutation } from 'convex/react';
+import { api } from '../convex/_generated/api';
 import './Login.css';
 
 const Login = ({ onLogin }) => {
+  const [isSignUp, setIsSignUp] = useState(false);
   const [formData, setFormData] = useState({
     phoneNumber: '',
-    password: ''
+    password: '',
+    name: ''
   });
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+
+  const loginMutation = useMutation(api.auth.login);
+  const signUpMutation = useMutation(api.auth.signUp);
 
   const validateForm = () => {
     const newErrors = {};
@@ -25,6 +32,11 @@ const Login = ({ onLogin }) => {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 8) {
       newErrors.password = 'Password must be at least 8 characters long';
+    }
+
+    // Name validation for sign up
+    if (isSignUp && !formData.name.trim()) {
+      newErrors.name = 'Name is required';
     }
 
     setErrors(newErrors);
@@ -56,21 +68,41 @@ const Login = ({ onLogin }) => {
 
     setIsLoading(true);
     
-    // Demo credentials check
-    const demoPhone = '09127726273';
-    const demoPassword = 'doosetdaram';
-    
-    // Simulate API call with demo credentials
-    setTimeout(() => {
-      setIsLoading(false);
-      if (formData.phoneNumber === demoPhone && formData.password === demoPassword) {
-        onLogin(true);
+    try {
+      let user;
+      
+      if (isSignUp) {
+        user = await signUpMutation({
+          phoneNumber: formData.phoneNumber,
+          password: formData.password,
+          name: formData.name
+        });
       } else {
-        setErrors({
-          phoneNumber: 'Invalid credentials. Use demo: 09127726273 / doosetdaram'
+        user = await loginMutation({
+          phoneNumber: formData.phoneNumber,
+          password: formData.password
         });
       }
-    }, 1000);
+      
+      onLogin(true, user);
+    } catch (error) {
+      console.error(isSignUp ? 'Sign up error:' : 'Login error:', error);
+      setErrors({
+        general: error.message || (isSignUp ? 'Sign up failed' : 'Login failed')
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleMode = () => {
+    setIsSignUp(!isSignUp);
+    setFormData({
+      phoneNumber: '',
+      password: '',
+      name: ''
+    });
+    setErrors({});
   };
 
   return (
@@ -82,20 +114,40 @@ const Login = ({ onLogin }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
+          {isSignUp && (
+            <div className="input-group">
+              <label htmlFor="name" className="input-label">
+                Full Name
+              </label>
+              <input
+                type="text"
+                id="name"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                className={`input-field ${errors.name ? 'error' : ''}`}
+                placeholder="Enter your full name"
+              />
+              {errors.name && (
+                <span className="error-message">{errors.name}</span>
+              )}
+            </div>
+          )}
+
           <div className="input-group">
             <label htmlFor="phoneNumber" className="input-label">
               Phone Number
             </label>
-                         <input
-               type="tel"
-               id="phoneNumber"
-               name="phoneNumber"
-               value={formData.phoneNumber}
-               onChange={handleInputChange}
-               className={`input-field ${errors.phoneNumber ? 'error' : ''}`}
-               placeholder="09xxxxxxxxx"
-               maxLength="11"
-             />
+            <input
+              type="tel"
+              id="phoneNumber"
+              name="phoneNumber"
+              value={formData.phoneNumber}
+              onChange={handleInputChange}
+              className={`input-field ${errors.phoneNumber ? 'error' : ''}`}
+              placeholder="09xxxxxxxxx"
+              maxLength="11"
+            />
             {errors.phoneNumber && (
               <span className="error-message">{errors.phoneNumber}</span>
             )}
@@ -119,6 +171,10 @@ const Login = ({ onLogin }) => {
             )}
           </div>
 
+          {errors.general && (
+            <div className="error-message general-error">{errors.general}</div>
+          )}
+
           <button
             type="submit"
             className="btn btn-primary login-btn"
@@ -127,19 +183,23 @@ const Login = ({ onLogin }) => {
             {isLoading ? (
               <>
                 <div className="spinner"></div>
-                Signing In...
+                {isSignUp ? 'Creating Account...' : 'Signing In...'}
               </>
             ) : (
-              'Sign In'
+              isSignUp ? 'Sign Up' : 'Sign In'
             )}
           </button>
         </form>
 
         <div className="login-footer">
-          <p>Demo credentials: 09127726273 / doosetdaram</p>
+          <button
+            type="button"
+            className="btn btn-link toggle-btn"
+            onClick={toggleMode}
+          >
+            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+          </button>
         </div>
-
-
       </div>
     </div>
   );
