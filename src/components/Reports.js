@@ -13,6 +13,16 @@ const Reports = ({ onLogout, currentUser }) => {
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
 
+  // User management state
+  const [showUserManagement, setShowUserManagement] = useState(false);
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [newUserData, setNewUserData] = useState({
+    phoneNumber: '',
+    password: '',
+    name: ''
+  });
+  const [userErrors, setUserErrors] = useState({});
+
   // Debug logging
   console.log('Reports component rendered with:', { currentUser });
 
@@ -27,6 +37,11 @@ const Reports = ({ onLogout, currentUser }) => {
     selectedCampaign ? { campaignId: selectedCampaign } : "skip"
   );
   const cancelCampaignMutation = useMutation(api.sms.cancelCampaign);
+
+  // User management queries and mutations
+  const allUsers = useQuery(api.auth.getAllUsers);
+  const createUserMutation = useMutation(api.auth.createUser);
+  const deleteUserMutation = useMutation(api.auth.deleteUser);
 
   const formatDate = (timestamp) => {
     return new Date(timestamp).toLocaleDateString('fa-IR', {
@@ -103,6 +118,59 @@ const Reports = ({ onLogout, currentUser }) => {
     return `${time}ms`;
   };
 
+  // User management functions
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    
+    // Validate form
+    const newErrors = {};
+    const phoneRegex = /^09\d{9}$/;
+    
+    if (!newUserData.phoneNumber) {
+      newErrors.phoneNumber = 'Phone number is required';
+    } else if (!phoneRegex.test(newUserData.phoneNumber)) {
+      newErrors.phoneNumber = 'Phone number must be in format 09xxxxxxxxx';
+    }
+
+    if (!newUserData.password) {
+      newErrors.password = 'Password is required';
+    } else if (newUserData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters long';
+    }
+
+    if (!newUserData.name.trim()) {
+      newErrors.name = 'Name is required';
+    }
+
+    setUserErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      return;
+    }
+
+    try {
+      await createUserMutation({
+        phoneNumber: newUserData.phoneNumber,
+        password: newUserData.password,
+        name: newUserData.name
+      });
+      
+      setNewUserData({ phoneNumber: '', password: '', name: '' });
+      setShowCreateUser(false);
+      setUserErrors({});
+    } catch (error) {
+      setUserErrors({ general: error.message });
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (window.confirm('Are you sure you want to delete this user?')) {
+      try {
+        await deleteUserMutation({ userId });
+      } catch (error) {
+        alert('Error deleting user: ' + error.message);
+      }
+    }
+  };
 
 
   // Sorting and pagination logic
@@ -166,6 +234,9 @@ const Reports = ({ onLogout, currentUser }) => {
               {currentUser?.name || currentUser?.phoneNumber} ({currentUser?.phoneNumber})
             </span>
             <div className="nav-buttons">
+              <button onClick={() => setShowUserManagement(!showUserManagement)} className="btn btn-outline btn-sm">
+                👥 Users
+              </button>
               <button onClick={() => navigate('/dashboard')} className="btn btn-outline btn-sm">
                 📱 Dashboard
               </button>
@@ -178,7 +249,163 @@ const Reports = ({ onLogout, currentUser }) => {
       </header>
 
       <main className="reports-main">
-        <div className="reports-content">
+        {showUserManagement ? (
+          // User Management Section
+          <div className="user-management-section">
+            <div className="section-header">
+              <h2>👥 User Management</h2>
+              <button 
+                onClick={() => setShowUserManagement(false)} 
+                className="btn btn-outline btn-sm"
+              >
+                ← Back to Reports
+              </button>
+            </div>
+
+            <div className="user-management-content">
+              <div className="user-actions">
+                <button 
+                  onClick={() => setShowCreateUser(true)} 
+                  className="btn btn-primary"
+                >
+                  ➕ Create New User
+                </button>
+              </div>
+
+              {showCreateUser && (
+                <div className="create-user-modal">
+                  <div className="modal-content">
+                    <div className="modal-header">
+                      <h3>Create New User</h3>
+                      <button 
+                        onClick={() => {
+                          setShowCreateUser(false);
+                          setNewUserData({ phoneNumber: '', password: '', name: '' });
+                          setUserErrors({});
+                        }} 
+                        className="modal-close"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    
+                    <form onSubmit={handleCreateUser} className="create-user-form">
+                      <div className="input-group">
+                        <label htmlFor="newUserName" className="input-label">Full Name</label>
+                        <input
+                          type="text"
+                          id="newUserName"
+                          value={newUserData.name}
+                          onChange={(e) => setNewUserData(prev => ({ ...prev, name: e.target.value }))}
+                          className={`input-field ${userErrors.name ? 'error' : ''}`}
+                          placeholder="Enter full name"
+                        />
+                        {userErrors.name && <span className="error-message">{userErrors.name}</span>}
+                      </div>
+
+                      <div className="input-group">
+                        <label htmlFor="newUserPhone" className="input-label">Phone Number</label>
+                        <input
+                          type="tel"
+                          id="newUserPhone"
+                          value={newUserData.phoneNumber}
+                          onChange={(e) => setNewUserData(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                          className={`input-field ${userErrors.phoneNumber ? 'error' : ''}`}
+                          placeholder="09xxxxxxxxx"
+                          maxLength="11"
+                        />
+                        {userErrors.phoneNumber && <span className="error-message">{userErrors.phoneNumber}</span>}
+                      </div>
+
+                      <div className="input-group">
+                        <label htmlFor="newUserPassword" className="input-label">Password</label>
+                        <input
+                          type="password"
+                          id="newUserPassword"
+                          value={newUserData.password}
+                          onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
+                          className={`input-field ${userErrors.password ? 'error' : ''}`}
+                          placeholder="Enter password (min 8 characters)"
+                        />
+                        {userErrors.password && <span className="error-message">{userErrors.password}</span>}
+                      </div>
+
+                      {userErrors.general && (
+                        <div className="error-message general-error">{userErrors.general}</div>
+                      )}
+
+                      <div className="form-actions">
+                        <button type="submit" className="btn btn-primary">
+                          Create User
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            setShowCreateUser(false);
+                            setNewUserData({ phoneNumber: '', password: '', name: '' });
+                            setUserErrors({});
+                          }} 
+                          className="btn btn-outline"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              <div className="users-list">
+                <h3>All Users ({allUsers?.length || 0})</h3>
+                {allUsers && allUsers.length > 0 ? (
+                  <div className="users-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Phone Number</th>
+                          <th>Created</th>
+                          <th>Last Login</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allUsers.map((user) => (
+                          <tr key={user._id}>
+                            <td>{user.name || 'N/A'}</td>
+                            <td>{user.phoneNumber}</td>
+                            <td>{formatDate(user.createdAt)}</td>
+                            <td>{user.lastLogin ? formatDate(user.lastLogin) : 'Never'}</td>
+                            <td>
+                              {user._id !== currentUser._id && (
+                                <button 
+                                  onClick={() => handleDeleteUser(user._id)}
+                                  className="btn btn-outline btn-sm delete-btn"
+                                  title="Delete User"
+                                >
+                                  🗑️ Delete
+                                </button>
+                              )}
+                              {user._id === currentUser._id && (
+                                <span className="current-user-badge">Current User</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="no-users">
+                    <p>No users found. Create the first user above.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          // Reports Content
+          <div className="reports-content">
           {/* Table Header */}
           <div className="table-header">
             <div className="table-info">
@@ -357,6 +584,7 @@ const Reports = ({ onLogout, currentUser }) => {
             </div>
           )}
         </div>
+        )}
       </main>
 
       {/* Details Modal */}
