@@ -28,10 +28,7 @@ const Reports = ({ onLogout, currentUser }) => {
 
   // Convex queries and mutations
   const campaigns = useQuery(api.sms.getAllCampaignStats);
-  const segmentsSummary = useQuery(
-    api.sms.getCampaignSegmentsSummary,
-    selectedCampaign ? { campaignId: selectedCampaign } : "skip"
-  );
+  // Removed per-batch segments view for a cleaner details modal
   const scheduledFunctions = useQuery(
     api.sms.getScheduledFunctions,
     selectedCampaign ? { campaignId: selectedCampaign } : "skip"
@@ -759,56 +756,8 @@ const Reports = ({ onLogout, currentUser }) => {
                         </div>
                       </div>
                     )}
-
-              {/* Batch Segments */}
-              {segmentsSummary && (
-                <div className="detail-section">
-                  <h3>Batches ({segmentsSummary.length})</h3>
-                  <div className="logs-container">
-                    {segmentsSummary.length > 0 ? (
-                      segmentsSummary.map((seg) => (
-                        <div key={seg._id} className={`log-entry ${seg.status}`}>
-                          <div className="log-header">
-                            <div className="log-status">
-                              {getSMSStatusIcon(seg.status === 'sent' ? 'success' : seg.status === 'failed' ? 'failed' : 'partial_success')} {seg.status.toUpperCase()}
-                            </div>
-                            <div className="log-time">
-                              {seg.completedAt ? formatTime(seg.completedAt) : '—'}
-                            </div>
-                          </div>
-                          <div className="log-details">
-                            <div className="log-basic">
-                              <div className="log-item">
-                                <span className="log-label">Batch:</span>
-                                <span className="log-value">{seg.batchNumber}</span>
-                              </div>
-                              <div className="log-item">
-                                <span className="log-label">Numbers:</span>
-                                <span className="log-value">{seg.numbersCount}</span>
-                              </div>
-                            </div>
-
-                            {seg.lastError && (
-                              <div className="log-error">
-                                <div className="log-item">
-                                  <span className="log-label">Error:</span>
-                                  <span className="log-value error">{seg.lastError}</span>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* API payload deliberately omitted to avoid heavy data rendering */}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="no-logs">
-                        <p>No batches found for this campaign</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                
+              {/* Batch list removed intentionally for performance */}
                   </div>
                 );
               })()}
