@@ -54,6 +54,7 @@ const Dashboard = ({ onLogout, currentUser }) => {
   const [tag, setTag] = useState('');
   const [scheduledDateTime, setScheduledDateTime] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
   const [logs, setLogs] = useState([]);
@@ -180,6 +181,8 @@ const Dashboard = ({ onLogout, currentUser }) => {
       return;
     }
 
+    // Close modal if open and start sending
+    setShowConfirmModal(false);
     console.log('Starting SMS sending process...');
     setIsLoading(true);
     
@@ -231,6 +234,11 @@ const Dashboard = ({ onLogout, currentUser }) => {
       console.log('SMS sending process completed');
       setIsLoading(false);
     }
+  };
+
+  const openConfirmModal = () => {
+    if (!csvData || !message.trim()) return;
+    setShowConfirmModal(true);
   };
 
   const handleLogout = () => {
@@ -650,7 +658,7 @@ const Dashboard = ({ onLogout, currentUser }) => {
                 <h2 className="card-title">🚀 Actions</h2>
                 <div className="action-buttons">
                   <button
-                    onClick={handleSendSMS}
+                    onClick={openConfirmModal}
                     disabled={isLoading || !csvData || !message.trim()}
                     className="btn btn-primary send-btn"
                   >
@@ -684,6 +692,44 @@ const Dashboard = ({ onLogout, currentUser }) => {
                   </div>
                 )}
               </div>
+              {showConfirmModal && (
+                <div className="modal-overlay" onClick={() => setShowConfirmModal(false)}>
+                  <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-header">
+                      <h3>Confirm SMS Campaign</h3>
+                      <button className="modal-close" onClick={() => setShowConfirmModal(false)}>✕</button>
+                    </div>
+                    <div className="modal-body">
+                      <div className="detail-section">
+                        <div className="detail-grid">
+                          <div className="detail-item">
+                            <span className="detail-label">Numbers:</span>
+                            <span className="detail-value">{csvData?.numbers?.length || 0}</span>
+                          </div>
+                          <div className="detail-item">
+                            <span className="detail-label">Tag:</span>
+                            <span className="detail-value">{tag || 'untagged'}</span>
+                          </div>
+                          <div className="detail-item">
+                            <span className="detail-label">Time to Send:</span>
+                            <span className="detail-value">{scheduledDateTime ? scheduledDateTime.toLocaleString('fa-IR') : 'Send Now'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="detail-section">
+                        <h4>Message</h4>
+                        <div className="message-content">
+                          <pre className="message-text" dir="rtl">{message}</pre>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="modal-footer">
+                      <button className="btn btn-outline" onClick={() => setShowConfirmModal(false)}>Cancel</button>
+                      <button className="btn btn-primary" onClick={handleSendSMS}>Confirm Send</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

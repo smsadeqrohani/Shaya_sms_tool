@@ -786,14 +786,6 @@ const Reports = ({ onLogout, currentUser }) => {
                                 <span className="log-label">Numbers:</span>
                                 <span className="log-value">{seg.numbersCount}</span>
                               </div>
-                              <div className="log-item">
-                                <span className="log-label">HTTP:</span>
-                                <span className="log-value">{seg.httpStatusCode ?? 'N/A'}</span>
-                              </div>
-                              <div className="log-item">
-                                <span className="log-label">Response Time:</span>
-                                <span className="log-value">{formatResponseTime(seg.responseTime)}</span>
-                              </div>
                             </div>
 
                             {seg.lastError && (
