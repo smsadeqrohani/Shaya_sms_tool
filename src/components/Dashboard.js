@@ -178,42 +178,81 @@ const Dashboard = ({ onLogout, currentUser }) => {
     // Use message directly (no HTML conversion needed)
     const plainTextMessage = cleanText(message);
 
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      
-      console.log(`Processing batch ${i + 1}/${batches.length}:`, batch);
+    // Process batches concurrently with max 5 concurrent requests
+    const concurrentLimit = 5;
+    let completedBatches = 0;
 
-      try {
-        const result = await sendSMSBatchAction({
-          campaignId,
-          batchNumber: i + 1,
-          phoneNumbers: batch,
-          message: plainTextMessage,
-          tag
-        });
+    for (let i = 0; i < batches.length; i += concurrentLimit) {
+      const currentBatchGroup = batches.slice(i, i + concurrentLimit);
+      const batchPromises = currentBatchGroup.map(async (batch, index) => {
+        const batchIndex = i + index;
+        const batchNumber = batchIndex + 1;
+        
+        console.log(`Processing batch ${batchNumber}/${batches.length}:`, batch);
 
-        if (result.success) {
-          const logMessage = `Batch ${i + 1}/${batches.length}: SMS sent successfully to ${batch.length} numbers`;
-          console.log(logMessage);
-          addLog(logMessage);
-        } else {
-          const logMessage = `Batch ${i + 1}/${batches.length}: Failed to send SMS - ${result.error}`;
-          console.log(logMessage);
-          addLog(logMessage);
+        try {
+          const result = await sendSMSBatchAction({
+            campaignId,
+            batchNumber: batchNumber,
+            phoneNumbers: batch,
+            message: plainTextMessage,
+            tag
+          });
+
+          if (result.success) {
+            const logMessage = `Batch ${batchNumber}/${batches.length}: SMS sent successfully to ${batch.length} numbers`;
+            console.log(logMessage);
+            addLog(logMessage);
+          } else {
+            const logMessage = `Batch ${batchNumber}/${batches.length}: Failed to send SMS - ${result.error}`;
+            console.log(logMessage);
+            addLog(logMessage);
+            
+            // Check if campaign was cancelled and stop the entire process
+            if (result.message && result.message.includes("Campaign has been cancelled")) {
+              const stopMessage = `Campaign has been cancelled. Stopping all remaining batches.`;
+              console.log(stopMessage);
+              addLog(stopMessage);
+              throw new Error("CAMPAIGN_CANCELLED");
+            }
+          }
+        } catch (error) {
+          console.error('API error for batch', batchNumber, ':', error);
+          
+          // Check if this is a campaign cancellation error
+          if (error.message === "CAMPAIGN_CANCELLED") {
+            const stopMessage = `Campaign cancelled. Stopping SMS sending process.`;
+            console.log(stopMessage);
+            addLog(stopMessage);
+            throw error; // Re-throw to stop the entire process
+          }
+          
+          const errorMessage = `Batch ${batchNumber}/${batches.length}: Error - ${error.message}`;
+          console.log(errorMessage);
+          addLog(errorMessage);
         }
-      } catch (error) {
-        console.error('API error for batch', i + 1, ':', error);
-        const errorMessage = `Batch ${i + 1}/${batches.length}: Error - ${error.message}`;
-        console.log(errorMessage);
-        addLog(errorMessage);
-      }
 
-      setProgress({ current: i + 1, total: batches.length });
+        completedBatches++;
+        setProgress({ current: completedBatches, total: batches.length });
+      });
+
+      // Wait for all batches in current group to complete
+      try {
+        await Promise.all(batchPromises);
+      } catch (error) {
+        // Check if this is a campaign cancellation error
+        if (error.message === "CAMPAIGN_CANCELLED") {
+          console.log('Campaign cancelled during batch processing. Stopping all remaining batches.');
+          addLog('Campaign cancelled during batch processing. Stopping all remaining batches.');
+          return; // Exit the function completely
+        }
+        throw error; // Re-throw other errors
+      }
       
-      // Add delay between batches to avoid rate limiting
-      if (i < batches.length - 1) {
-        console.log('Waiting 1 second before next batch...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // Add small delay between batch groups to avoid overwhelming the API
+      if (i + concurrentLimit < batches.length) {
+        console.log('Waiting 500ms before next batch group...');
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
 

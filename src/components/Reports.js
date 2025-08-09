@@ -115,7 +115,7 @@ const Reports = ({ onLogout, currentUser }) => {
 
   const formatResponseTime = (time) => {
     if (!time) return 'N/A';
-    return `${time}ms`;
+    return `${time.toFixed(1)}ms`;
   };
 
   // User management functions

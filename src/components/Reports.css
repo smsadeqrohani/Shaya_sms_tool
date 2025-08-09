@@ -120,19 +120,26 @@
 .campaigns-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .campaigns-table th {
-  background: rgba(255, 255, 255, 0.05);
-  padding: 16px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 14px 12px;
   text-align: left;
   font-weight: 600;
   color: var(--text-primary);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   position: sticky;
   top: 0;
   z-index: 10;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .campaigns-table th.sortable {
@@ -146,9 +153,10 @@
 }
 
 .campaigns-table td {
-  padding: 16px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 12px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   vertical-align: top;
+  font-size: 0.8rem;
 }
 
 .campaign-row {
@@ -156,7 +164,9 @@
 }
 
 .campaign-row:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 /* Table Cell Styles */

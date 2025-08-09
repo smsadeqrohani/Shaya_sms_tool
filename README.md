@@ -84,7 +84,8 @@ PhoneNumber
 The application uses the OkitSMS API with the following configuration:
 - **Endpoint**: `https://api.okitsms.com/api/v1/sms/send/1tn`
 - **Source Number**: `981000007711` (fixed)
-- **Batch Size**: 100 numbers per request
+- **Batch Size**: 100 numbers per request (max allowed)
+- **Concurrent Requests**: 5 batches processed simultaneously
 - **Delay**: 1 second between batches
 
 ## Project Structure
@@ -143,7 +144,8 @@ src/
 - RTL (Right-to-Left) support for Persian text
 
 ### Batch Processing
-- Configurable batch size (currently 100)
+- Configurable batch size (currently 100 - max allowed)
+- Concurrent processing (5 batches simultaneously)
 - Progress tracking with visual indicators
 - Error handling for failed batches
 - Rate limiting with delays between batches
