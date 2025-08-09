@@ -98,3 +98,15 @@ jspm_packages/
 
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test 
+
+# Secrets and local tooling
+.envrc
+.direnv/
+*.pem
+*.key
+
+# Data files (avoid committing real phone lists)
+*.csv
+
+# Convex local state (if created by CLI)
+.convex/ 
