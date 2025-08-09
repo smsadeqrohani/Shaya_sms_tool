@@ -73,8 +73,8 @@ const Dashboard = ({ onLogout, currentUser }) => {
   console.log('Dashboard component rendered with:', { currentUser });
 
   // Convex mutations and actions
-  const createCampaignMutation = useMutation(api.sms.createCampaign);
-  const sendSMSBatchAction = useAction(api.sms.sendSMSBatch);
+  const createCampaignWithSegments = useMutation(api.sms.createCampaignWithSegments);
+  const startCampaignJob = useAction(api.sms.startCampaignJob);
   const updateCampaignStatusMutation = useMutation(api.sms.updateCampaignStatus);
 
   // User management queries and mutations
@@ -160,105 +160,7 @@ const Dashboard = ({ onLogout, currentUser }) => {
     setLogs(prev => [...prev, logEntry]);
   };
 
-  const sendSMSBatch = async (numbers, campaignId, batchSize = 100) => {
-    console.log('Starting SMS batch sending...');
-    console.log('Total numbers to send:', numbers.length);
-    console.log('Batch size:', batchSize);
-    console.log('Message:', message);
-    console.log('Tag:', tag);
-
-    const batches = [];
-    for (let i = 0; i < numbers.length; i += batchSize) {
-      batches.push(numbers.slice(i, i + batchSize));
-    }
-
-    console.log('Created batches:', batches.length);
-    setProgress({ current: 0, total: batches.length });
-
-    // Use message directly (no HTML conversion needed)
-    const plainTextMessage = cleanText(message);
-
-    // Process batches concurrently with max 5 concurrent requests
-    const concurrentLimit = 5;
-    let completedBatches = 0;
-
-    for (let i = 0; i < batches.length; i += concurrentLimit) {
-      const currentBatchGroup = batches.slice(i, i + concurrentLimit);
-      const batchPromises = currentBatchGroup.map(async (batch, index) => {
-        const batchIndex = i + index;
-        const batchNumber = batchIndex + 1;
-        
-        console.log(`Processing batch ${batchNumber}/${batches.length}:`, batch);
-
-        try {
-          const result = await sendSMSBatchAction({
-            campaignId,
-            batchNumber: batchNumber,
-            phoneNumbers: batch,
-            message: plainTextMessage,
-            tag
-          });
-
-          if (result.success) {
-            const logMessage = `Batch ${batchNumber}/${batches.length}: SMS sent successfully to ${batch.length} numbers`;
-            console.log(logMessage);
-            addLog(logMessage);
-          } else {
-            const logMessage = `Batch ${batchNumber}/${batches.length}: Failed to send SMS - ${result.error}`;
-            console.log(logMessage);
-            addLog(logMessage);
-            
-            // Check if campaign was cancelled and stop the entire process
-            if (result.message && result.message.includes("Campaign has been cancelled")) {
-              const stopMessage = `Campaign has been cancelled. Stopping all remaining batches.`;
-              console.log(stopMessage);
-              addLog(stopMessage);
-              throw new Error("CAMPAIGN_CANCELLED");
-            }
-          }
-        } catch (error) {
-          console.error('API error for batch', batchNumber, ':', error);
-          
-          // Check if this is a campaign cancellation error
-          if (error.message === "CAMPAIGN_CANCELLED") {
-            const stopMessage = `Campaign cancelled. Stopping SMS sending process.`;
-            console.log(stopMessage);
-            addLog(stopMessage);
-            throw error; // Re-throw to stop the entire process
-          }
-          
-          const errorMessage = `Batch ${batchNumber}/${batches.length}: Error - ${error.message}`;
-          console.log(errorMessage);
-          addLog(errorMessage);
-        }
-
-        completedBatches++;
-        setProgress({ current: completedBatches, total: batches.length });
-      });
-
-      // Wait for all batches in current group to complete
-      try {
-        await Promise.all(batchPromises);
-      } catch (error) {
-        // Check if this is a campaign cancellation error
-        if (error.message === "CAMPAIGN_CANCELLED") {
-          console.log('Campaign cancelled during batch processing. Stopping all remaining batches.');
-          addLog('Campaign cancelled during batch processing. Stopping all remaining batches.');
-          return; // Exit the function completely
-        }
-        throw error; // Re-throw other errors
-      }
-      
-      // Add small delay between batch groups to avoid overwhelming the API
-      if (i + concurrentLimit < batches.length) {
-        console.log('Waiting 500ms before next batch group...');
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    }
-
-    console.log('All SMS batches processed');
-    addLog('All SMS batches processed');
-  };
+  const sendSMSBatch = async () => {};
 
   const handleSendSMS = async () => {
     console.log('Send SMS button clicked');
@@ -301,15 +203,14 @@ const Dashboard = ({ onLogout, currentUser }) => {
         }
       }
 
-      // Create campaign
-      const campaignId = await createCampaignMutation({
+      // Create campaign with segments stored on server
+      const campaignId = await createCampaignWithSegments({
+        name: tag || 'Campaign',
         tag: tag || 'untagged',
         message: plainTextMessage,
-        totalNumbers: csvData.numbers.length,
-        totalBatches,
+        numbers: csvData.numbers,
         createdBy: currentUser._id,
         scheduledFor: scheduledTimestamp,
-        phoneNumbers: isScheduled ? csvData.numbers : undefined
       });
 
       addLog(`Campaign created with ID: ${campaignId}`);
@@ -317,20 +218,9 @@ const Dashboard = ({ onLogout, currentUser }) => {
       if (isScheduled) {
         addLog(`Campaign scheduled for: ${new Date(scheduledTimestamp).toLocaleString('fa-IR')}`);
       } else {
-        // Update campaign status to in progress for immediate sending
-        await updateCampaignStatusMutation({
-          campaignId,
-          status: 'in_progress'
-        });
-
-        // Send SMS batches
-        await sendSMSBatch(csvData.numbers, campaignId, batchSize);
-
-        // Update campaign status to completed
-        await updateCampaignStatusMutation({
-          campaignId,
-          status: 'completed'
-        });
+        // Start server-side job to send all segments
+        await startCampaignJob({ campaignId });
+        addLog('Server-side job started to send all segments');
       }
 
       addLog('Campaign completed successfully');

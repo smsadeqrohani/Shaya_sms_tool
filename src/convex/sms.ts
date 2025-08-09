@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, action } from "./_generated/server";
+import { mutation, query, action, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 
 // Create a new SMS campaign
@@ -452,7 +452,15 @@ export const sendSMSBatch = action({
 export const updateCampaignStatus = mutation({
   args: {
     campaignId: v.id("campaigns"),
-    status: v.union(v.literal("pending"), v.literal("in_progress"), v.literal("completed"), v.literal("failed"), v.literal("scheduled"), v.literal("cancelled")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("paused"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("scheduled"),
+      v.literal("cancelled")
+    ),
   },
   handler: async (ctx, args) => {
     const updateData: any = { status: args.status };
@@ -516,13 +524,29 @@ export const getAllCampaigns = query({
 
 // Get campaign logs
 export const getCampaignLogs = query({
-  args: { campaignId: v.id("campaigns") },
+  args: { campaignId: v.id("campaigns"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const limit = args.limit ?? 200;
+    const logs = await ctx.db
       .query("smsLogs")
-      .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
+      .withIndex("by_campaign_sent_at", (q) => q.eq("campaignId", args.campaignId))
       .order("desc")
-      .collect();
+      .take(limit);
+
+    // Trim heavy fields to reduce payload size
+    return logs.map((log) => ({
+      _id: log._id,
+      campaignId: log.campaignId,
+      batchNumber: log.batchNumber,
+      batchSize: log.batchSize,
+      status: log.status,
+      responseTime: log.responseTime,
+      httpStatusCode: log.httpStatusCode,
+      apiMessage: log.apiMessage,
+      sentAt: log.sentAt,
+      errorMessage: log.errorMessage,
+      // apiResponseData intentionally omitted for performance
+    }));
   },
 });
 
@@ -631,5 +655,328 @@ export const migrateCampaignStats = mutation({
     return { migrated: allStats.length };
   },
 });
+
+export const createCampaignWithSegments = mutation({
+  args: {
+    name: v.optional(v.string()),
+    tag: v.string(),
+    message: v.string(),
+    numbers: v.array(v.string()),
+    createdBy: v.id("users"),
+    scheduledFor: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const persianDate = new Intl.DateTimeFormat('fa-IR', {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    }).format(new Date());
+
+    const isScheduled = Boolean(args.scheduledFor && args.scheduledFor > Date.now());
+
+    const totalNumbers = args.numbers.length;
+    const batchSize = 100;
+    const totalBatches = Math.ceil(totalNumbers / batchSize);
+
+    const campaignId = await ctx.db.insert("campaigns", {
+      name: args.name,
+      tag: args.tag,
+      message: args.message,
+      totalNumbers,
+      totalBatches,
+      status: isScheduled ? "scheduled" : "pending",
+      createdBy: args.createdBy,
+      createdAt: Date.now(),
+      persianDate,
+      scheduledFor: args.scheduledFor || undefined,
+      isScheduled,
+    });
+
+    await ctx.db.insert("campaignStats", {
+      campaignId,
+      totalSent: 0,
+      totalFailed: 0,
+      totalSuccess: 0,
+      totalPartialSuccess: 0,
+      requestCount: 0,
+      lastUpdated: Date.now(),
+    });
+
+    for (let i = 0; i < totalBatches; i++) {
+      const batchNumbers = args.numbers.slice(i * batchSize, (i + 1) * batchSize);
+      await ctx.db.insert("segments", {
+        campaignId,
+        batchNumber: i + 1,
+        numbers: batchNumbers,
+        status: "pending",
+        sentCount: 0,
+        failedCount: 0,
+        createdAt: Date.now(),
+        scheduledFor: args.scheduledFor || undefined,
+      });
+    }
+
+    if (isScheduled && args.scheduledFor) {
+      await ctx.scheduler.runAt(args.scheduledFor, api.sms.startCampaignJob, { campaignId });
+    }
+
+    return campaignId;
+  }
+});
+
+export const getCampaignSegments = query({
+  args: { campaignId: v.id("campaigns") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("segments")
+      .withIndex("by_campaign", (q: any) => q.eq("campaignId", args.campaignId))
+      .order("asc")
+      .collect();
+  },
+});
+
+export const getCampaignSegmentsSummary = query({
+  args: { campaignId: v.id("campaigns") },
+  handler: async (ctx, args) => {
+    const segments = await ctx.db
+      .query("segments")
+      .withIndex("by_campaign", (q: any) => q.eq("campaignId", args.campaignId))
+      .order("asc")
+      .collect();
+
+    return segments.map((seg: any) => ({
+      _id: seg._id,
+      campaignId: seg.campaignId,
+      batchNumber: seg.batchNumber,
+      status: seg.status,
+      sentCount: seg.sentCount,
+      failedCount: seg.failedCount,
+      createdAt: seg.createdAt,
+      scheduledFor: seg.scheduledFor,
+      startedAt: seg.startedAt,
+      completedAt: seg.completedAt,
+      lastError: seg.lastError,
+      numbersCount: seg.numbers.length,
+      // API metadata captured at send time
+      httpStatusCode: seg.httpStatusCode,
+      responseTime: seg.responseTime,
+      requestSize: seg.requestSize,
+      responseSize: seg.responseSize,
+    }));
+  },
+});
+
+async function sendBatch(ctx: any, numbers: string[], message: string, tag: string) {
+  const sourceNumber = "981000007711";
+  const requestData = {
+    SourceNumber: sourceNumber,
+    DestinationNumbers: numbers,
+    Message: message,
+    UserTag: tag
+  };
+  const requestBody = JSON.stringify(requestData);
+  const startTime = Date.now();
+  const response = await fetch('https://api.okitsms.com/api/v1/sms/send/1tn', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-KEY': 'CV@%OR!pM4p!jGp5j&kBFBYmAtEh#%Sr'
+    },
+    body: requestBody
+  });
+  const responseTime = Date.now() - startTime;
+  const responseText = await response.text();
+  let responseData: any;
+  try { responseData = JSON.parse(responseText); } catch { responseData = { status: false, message: 'Invalid JSON' }; }
+  const isSuccess = response.ok && responseData.status === true;
+  return { 
+    isSuccess, 
+    responseTime, 
+    responseStatus: response.status, 
+    responseData,
+    requestBody,
+    responseText,
+    requestSize: new TextEncoder().encode(requestBody).length,
+    responseSize: new TextEncoder().encode(responseText).length,
+  };
+}
+
+// Helper: fetch pending segments for a campaign
+export const getPendingSegments = query({
+  args: { campaignId: v.id("campaigns"), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 10;
+    return await ctx.db
+      .query("segments")
+      .withIndex("by_campaign_status", (q: any) => q.eq("campaignId", args.campaignId).eq("status", "pending"))
+      .order("asc")
+      .take(limit);
+  },
+});
+
+// Helper: mark a segment in progress
+export const markSegmentInProgress = internalMutation({
+  args: { segmentId: v.id("segments") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.segmentId, { status: "in_progress", startedAt: Date.now(), lastError: undefined });
+  },
+});
+
+// Helper: finalize a segment after send
+export const finalizeSegment = internalMutation({
+  args: {
+    segmentId: v.id("segments"),
+    status: v.union(v.literal("sent"), v.literal("failed")),
+    sentCount: v.number(),
+    failedCount: v.number(),
+    lastError: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.segmentId, {
+      status: args.status,
+      completedAt: Date.now(),
+      sentCount: args.sentCount,
+      failedCount: args.failedCount,
+      lastError: args.lastError,
+    });
+  },
+});
+
+// Helper: patch API payload and metrics onto a segment (actions cannot use ctx.db directly)
+export const patchSegmentApiPayload = internalMutation({
+  args: {
+    segmentId: v.id("segments"),
+    apiRequest: v.optional(v.string()),
+    apiResponse: v.optional(v.string()),
+    httpStatusCode: v.optional(v.number()),
+    responseTime: v.optional(v.number()),
+    requestSize: v.optional(v.number()),
+    responseSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.segmentId, {
+      apiRequest: args.apiRequest,
+      apiResponse: args.apiResponse,
+      httpStatusCode: args.httpStatusCode,
+      responseTime: args.responseTime,
+      requestSize: args.requestSize,
+      responseSize: args.responseSize,
+    });
+  },
+});
+
+export const startCampaignJob = action({
+  args: { campaignId: v.id("campaigns"), concurrentLimit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<{ status: "completed" | "in_progress" | "paused" }> => {
+    const concurrentLimit = args.concurrentLimit ?? 3;
+
+    // Mark campaign in progress
+    await ctx.runMutation(api.sms.updateCampaignStatus, { campaignId: args.campaignId, status: "in_progress" });
+
+    while (true) {
+      // Respect pause/cancel on each cycle
+      const current = await ctx.runQuery(api.sms.getCampaign, { campaignId: args.campaignId });
+      if (!current) break;
+      if (current.status === "cancelled") break;
+      if (current.status === "paused") {
+        return { status: "paused" };
+      }
+
+      const pendingSegments = await ctx.runQuery(api.sms.getPendingSegments, { campaignId: args.campaignId, limit: concurrentLimit });
+
+      if (pendingSegments.length === 0) break;
+
+      // Mark all selected segments as in progress
+      await Promise.all(pendingSegments.map((seg: any) => ctx.runMutation(internal.sms.markSegmentInProgress, { segmentId: seg._id })));
+
+      // Actually implement send and stats update
+      await Promise.all(pendingSegments.map(async (seg: any) => {
+        try {
+          const campaign = await ctx.runQuery(api.sms.getCampaign, { campaignId: args.campaignId });
+          if (!campaign) return;
+          const { isSuccess, responseTime, responseStatus, responseData, requestBody, responseText, requestSize, responseSize } = await sendBatch(ctx, seg.numbers, campaign.message, campaign.tag);
+
+          const sentCount = isSuccess ? seg.numbers.length : 0;
+          const failedCount = isSuccess ? 0 : seg.numbers.length;
+
+          await ctx.runMutation(internal.sms.finalizeSegment, {
+            segmentId: seg._id,
+            status: isSuccess ? "sent" : "failed",
+            sentCount,
+            failedCount,
+            lastError: isSuccess ? undefined : (responseData.message || String(responseStatus)),
+          });
+
+          // Store compact API request/response on the segment itself via internal mutation
+          await ctx.runMutation(internal.sms.patchSegmentApiPayload, {
+            segmentId: seg._id,
+            apiRequest: requestBody,
+            apiResponse: responseText,
+            httpStatusCode: responseStatus,
+            responseTime,
+            requestSize,
+            responseSize,
+          });
+
+          await ctx.runMutation(api.sms.updateCampaignStats, {
+            campaignId: args.campaignId,
+            totalSent: seg.numbers.length,
+            totalSuccess: sentCount,
+            totalFailed: failedCount,
+            totalPartialSuccess: 0,
+            responseTime,
+            errorMessage: isSuccess ? undefined : (responseData.message || String(responseStatus)),
+            isSuccess,
+          });
+        } catch (error: any) {
+          await ctx.runMutation(internal.sms.finalizeSegment, {
+            segmentId: seg._id,
+            status: "failed",
+            sentCount: 0,
+            failedCount: seg.numbers.length,
+            lastError: error?.message || "Unknown error",
+          });
+          await ctx.runMutation(api.sms.updateCampaignStats, {
+            campaignId: args.campaignId,
+            totalSent: seg.numbers.length,
+            totalSuccess: 0,
+            totalFailed: seg.numbers.length,
+            totalPartialSuccess: 0,
+            responseTime: undefined,
+            errorMessage: error?.message || "Unknown error",
+            isSuccess: false,
+          });
+        }
+      }));
+    }
+
+    // Determine final status
+    const remaining = await ctx.runQuery(api.sms.getPendingSegments, { campaignId: args.campaignId, limit: 1 });
+
+    await ctx.runMutation(api.sms.updateCampaignStatus, {
+      campaignId: args.campaignId,
+      status: remaining.length === 0 ? "completed" : "in_progress",
+    });
+
+    return { status: remaining.length === 0 ? "completed" : "in_progress" };
+  },
+});
+
+// Pause campaign
+export const pauseCampaign = mutation({
+  args: { campaignId: v.id("campaigns") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.campaignId, { status: "paused" });
+  },
+});
+
+// Resume campaign
+export const resumeCampaign = mutation({
+  args: { campaignId: v.id("campaigns") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.campaignId, { status: "in_progress" });
+    return { ok: true };
+  },
+});
+
+// Note: For scheduled runs, schedule a call to api.sms.startCampaignJob at the campaign's scheduled time.
 
  

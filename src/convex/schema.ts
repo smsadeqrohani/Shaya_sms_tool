@@ -13,11 +13,20 @@ export default defineSchema({
 
   // SMS Campaigns table
   campaigns: defineTable({
+    name: v.optional(v.string()),
     tag: v.string(),
     message: v.string(),
     totalNumbers: v.number(),
     totalBatches: v.number(),
-    status: v.union(v.literal("pending"), v.literal("in_progress"), v.literal("completed"), v.literal("failed"), v.literal("scheduled"), v.literal("cancelled")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("paused"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("scheduled"),
+      v.literal("cancelled")
+    ),
     createdBy: v.id("users"),
     createdAt: v.number(),
     completedAt: v.optional(v.number()),
@@ -79,7 +88,7 @@ export default defineSchema({
       message: v.optional(v.string()),
       errorCode: v.optional(v.string()),
     }))),
-  }).index("by_campaign", ["campaignId"]).index("by_sent_at", ["sentAt"]).index("by_status", ["status"]),
+  }).index("by_campaign", ["campaignId"]).index("by_sent_at", ["sentAt"]).index("by_status", ["status"]).index("by_campaign_sent_at", ["campaignId", "sentAt"]),
 
   // Campaign Statistics for quick reporting
   campaignStats: defineTable({
@@ -98,4 +107,34 @@ export default defineSchema({
     lastSuccessAt: v.optional(v.number()), // Timestamp of last success
     lastFailureAt: v.optional(v.number()), // Timestamp of last failure
   }).index("by_campaign", ["campaignId"]),
+
+  // Segments (batches) table: stores 100-number batches per campaign
+  segments: defineTable({
+    campaignId: v.id("campaigns"),
+    batchNumber: v.number(),
+    numbers: v.array(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("sent"),
+      v.literal("failed")
+    ),
+    sentCount: v.number(),
+    failedCount: v.number(),
+    createdAt: v.number(),
+    scheduledFor: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    // API request/response captured at send time to avoid large smsLogs table
+    apiRequest: v.optional(v.string()),
+    apiResponse: v.optional(v.string()),
+    httpStatusCode: v.optional(v.number()),
+    responseTime: v.optional(v.number()),
+    requestSize: v.optional(v.number()),
+    responseSize: v.optional(v.number()),
+  })
+    .index("by_campaign", ["campaignId"]) 
+    .index("by_campaign_status", ["campaignId", "status"]) 
+    .index("by_scheduled", ["scheduledFor"]),
 }); 

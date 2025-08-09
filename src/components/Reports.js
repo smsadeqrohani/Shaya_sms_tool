@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import './Reports.css';
 
@@ -28,15 +28,19 @@ const Reports = ({ onLogout, currentUser }) => {
 
   // Convex queries and mutations
   const campaigns = useQuery(api.sms.getAllCampaignStats);
-  const campaignLogs = useQuery(
-    api.sms.getCampaignLogs,
+  const segmentsSummary = useQuery(
+    api.sms.getCampaignSegmentsSummary,
     selectedCampaign ? { campaignId: selectedCampaign } : "skip"
   );
   const scheduledFunctions = useQuery(
     api.sms.getScheduledFunctions,
     selectedCampaign ? { campaignId: selectedCampaign } : "skip"
   );
+  // Removed API payload fetching to improve performance
   const cancelCampaignMutation = useMutation(api.sms.cancelCampaign);
+  const pauseCampaignMutation = useMutation(api.sms.pauseCampaign);
+  const resumeCampaignMutation = useMutation(api.sms.resumeCampaign);
+  const startCampaignJob = useAction(api.sms.startCampaignJob);
 
   // User management queries and mutations
   const allUsers = useQuery(api.auth.getAllUsers);
@@ -221,6 +225,24 @@ const Reports = ({ onLogout, currentUser }) => {
     } catch (error) {
       console.error('Error cancelling campaign:', error);
       alert('Error cancelling campaign: ' + error.message);
+    }
+  };
+
+  const handlePauseCampaign = async (campaignId) => {
+    try {
+      await pauseCampaignMutation({ campaignId });
+    } catch (error) {
+      alert('Error pausing campaign: ' + error.message);
+    }
+  };
+
+  const handleResumeCampaign = async (campaignId) => {
+    try {
+      await resumeCampaignMutation({ campaignId });
+      // Kick the worker to continue processing pending segments
+      await startCampaignJob({ campaignId });
+    } catch (error) {
+      alert('Error resuming campaign: ' + error.message);
     }
   };
 
@@ -519,6 +541,24 @@ const Reports = ({ onLogout, currentUser }) => {
                         >
                           📋 Details
                         </button>
+                        {campaign.status === 'in_progress' && (
+                          <button 
+                            onClick={() => handlePauseCampaign(campaign._id)}
+                            className="btn btn-outline btn-sm"
+                            title="Pause Campaign"
+                          >
+                            ⏸️ Pause
+                          </button>
+                        )}
+                        {campaign.status === 'paused' && (
+                          <button 
+                            onClick={() => handleResumeCampaign(campaign._id)}
+                            className="btn btn-outline btn-sm"
+                            title="Resume Campaign"
+                          >
+                            ▶️ Resume
+                          </button>
+                        )}
                         {(campaign.status === 'pending' || campaign.status === 'scheduled' || campaign.status === 'in_progress') && (
                           <button 
                             onClick={() => handleCancelCampaign(campaign._id)}
@@ -695,7 +735,7 @@ const Reports = ({ onLogout, currentUser }) => {
                       </div>
                     </div>
 
-                    {/* Scheduled Functions */}
+              {/* Scheduled Functions */}
                     {scheduledFunctions && scheduledFunctions.length > 0 && (
                       <div className="detail-section">
                         <h3>Scheduled Functions ({scheduledFunctions.length})</h3>
@@ -704,9 +744,9 @@ const Reports = ({ onLogout, currentUser }) => {
                             <div key={func._id} className="scheduled-function">
                               <div className="func-info">
                                 <span className="func-name">{func.name}</span>
-                                <span className="func-status status-{func.state.kind}">
-                                  {func.state.kind}
-                                </span>
+                          <span className={`func-status status-${func.state.kind}`}>
+                            {func.state.kind}
+                          </span>
                               </div>
                               <div className="func-details">
                                 <span>Scheduled: {formatDate(func.scheduledTime)}</span>
@@ -720,69 +760,63 @@ const Reports = ({ onLogout, currentUser }) => {
                       </div>
                     )}
 
-                    {/* Detailed Logs */}
-                    {campaignLogs && (
-                      <div className="detail-section">
-                        <h3>Batch Logs ({campaignLogs.length})</h3>
-                        <div className="logs-container">
-                          {campaignLogs.length > 0 ? (
-                            campaignLogs.map((log) => (
-                              <div key={log._id} className={`log-entry ${log.status}`}>
-                                <div className="log-header">
-                                  <div className="log-status">
-                                    {getSMSStatusIcon(log.status)} {log.status.toUpperCase()}
-                                  </div>
-                                  <div className="log-time">
-                                    {formatTime(log.sentAt)}
-                                  </div>
-                                </div>
-                                
-                                <div className="log-details">
-                                  <div className="log-basic">
-                                    <div className="log-item">
-                                      <span className="log-label">Batch:</span>
-                                      <span className="log-value">{log.batchNumber}</span>
-                                    </div>
-                                    <div className="log-item">
-                                      <span className="log-label">Numbers:</span>
-                                      <span className="log-value">{log.batchSize}</span>
-                                    </div>
-                                    <div className="log-item">
-                                      <span className="log-label">Response Time:</span>
-                                      <span className="log-value">{formatResponseTime(log.responseTime)}</span>
-                                    </div>
-                                  </div>
+              {/* Batch Segments */}
+              {segmentsSummary && (
+                <div className="detail-section">
+                  <h3>Batches ({segmentsSummary.length})</h3>
+                  <div className="logs-container">
+                    {segmentsSummary.length > 0 ? (
+                      segmentsSummary.map((seg) => (
+                        <div key={seg._id} className={`log-entry ${seg.status}`}>
+                          <div className="log-header">
+                            <div className="log-status">
+                              {getSMSStatusIcon(seg.status === 'sent' ? 'success' : seg.status === 'failed' ? 'failed' : 'partial_success')} {seg.status.toUpperCase()}
+                            </div>
+                            <div className="log-time">
+                              {seg.completedAt ? formatTime(seg.completedAt) : '—'}
+                            </div>
+                          </div>
+                          <div className="log-details">
+                            <div className="log-basic">
+                              <div className="log-item">
+                                <span className="log-label">Batch:</span>
+                                <span className="log-value">{seg.batchNumber}</span>
+                              </div>
+                              <div className="log-item">
+                                <span className="log-label">Numbers:</span>
+                                <span className="log-value">{seg.numbersCount}</span>
+                              </div>
+                              <div className="log-item">
+                                <span className="log-label">HTTP:</span>
+                                <span className="log-value">{seg.httpStatusCode ?? 'N/A'}</span>
+                              </div>
+                              <div className="log-item">
+                                <span className="log-label">Response Time:</span>
+                                <span className="log-value">{formatResponseTime(seg.responseTime)}</span>
+                              </div>
+                            </div>
 
-                                  {log.errorMessage && (
-                                    <div className="log-error">
-                                      <div className="log-item">
-                                        <span className="log-label">Error:</span>
-                                        <span className="log-value error">{log.errorMessage}</span>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {log.apiResponseData && (
-                                    <div className="log-api-response">
-                                      <details>
-                                        <summary>API Response Details</summary>
-                                        <pre className="api-response-data">
-                                          {JSON.stringify(JSON.parse(log.apiResponseData), null, 2)}
-                                        </pre>
-                                      </details>
-                                    </div>
-                                  )}
+                            {seg.lastError && (
+                              <div className="log-error">
+                                <div className="log-item">
+                                  <span className="log-label">Error:</span>
+                                  <span className="log-value error">{seg.lastError}</span>
                                 </div>
                               </div>
-                            ))
-                          ) : (
-                            <div className="no-logs">
-                              <p>No logs found for this campaign</p>
-                            </div>
-                          )}
+                            )}
+
+                            {/* API payload deliberately omitted to avoid heavy data rendering */}
+                          </div>
                         </div>
+                      ))
+                    ) : (
+                      <div className="no-logs">
+                        <p>No batches found for this campaign</p>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
                   </div>
                 );
               })()}

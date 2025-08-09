@@ -68,6 +68,7 @@ export const sendScheduledSMS = internalAction({
       const responseTime = Date.now() - startTime;
       const responseText = await response.text();
       const responseSize = new TextEncoder().encode(responseText).length;
+      const requestSize = new TextEncoder().encode(requestBody).length;
       
       let responseData;
       try {
@@ -88,47 +89,24 @@ export const sendScheduledSMS = internalAction({
         message: responseData.message
       });
 
-      // Log the SMS attempt with detailed information
-      const logId = await ctx.runMutation(internal.scheduledSMS.logScheduledSMSAttempt, {
-        campaignId: args.campaignId,
-        batchNumber: args.batchNumber,
-        phoneNumbers: args.phoneNumbers,
-        message: args.message,
-        tag: args.tag,
-        status,
-        
-        // HTTP Response Details
-        httpStatusCode: response.status,
-        httpStatusText: response.statusText,
-        
-        // API Response Details
-        apiStatusCode: responseData.statusCode ? String(responseData.statusCode) : undefined,
-        apiMessage: responseData.message,
-        apiStatus: responseData.status,
-        apiResponseData: JSON.stringify(responseData),
-        
-        // Error Details
-        errorMessage: isSuccess ? undefined : responseData.message,
-        errorType: isSuccess ? undefined : 'API_ERROR',
-        
-        // Performance Metrics
-        responseTime,
-        requestSize,
-        responseSize,
-        
-        // Request Details
-        sourceNumber,
-        destinationCount,
-        messageLength,
-        
-        // Timestamps
-        sentAt: startTime,
-        receivedAt: Date.now(),
-        
-        // Additional Context
-        retryCount: 0,
-        userAgent: 'ShayaSMS-Tool-Scheduled/1.0',
-      });
+      // Store compact API request/response directly on a corresponding segment if exists
+      try {
+        const segments = await ctx.runQuery(internal.scheduledSMS.getSegmentsByCampaignAndBatch, {
+          campaignId: args.campaignId,
+          batchNumber: args.batchNumber,
+        });
+        if (segments && segments.length > 0) {
+          await ctx.runMutation(internal.scheduledSMS.patchSegmentApiPayload, {
+            segmentId: segments[0]._id,
+            apiRequest: requestBody,
+            apiResponse: responseText,
+            httpStatusCode: response.status,
+            responseTime,
+            requestSize,
+            responseSize,
+          });
+        }
+      } catch {}
 
       // Update campaign stats
       await ctx.runMutation(internal.scheduledSMS.updateScheduledCampaignStats, {
@@ -150,9 +128,8 @@ export const sendScheduledSMS = internalAction({
 
       console.log(`Scheduled SMS completed for campaign ${args.campaignId}, batch ${args.batchNumber}`);
       
-      return { 
-        success: isSuccess, 
-        logId,
+      return {
+        success: isSuccess,
         responseData,
         responseTime,
         status,
@@ -170,38 +147,24 @@ export const sendScheduledSMS = internalAction({
       
       console.error(`Scheduled SMS failed for campaign ${args.campaignId}, batch ${args.batchNumber}:`, error);
       
-      // Log the error with detailed information
-      const logId = await ctx.runMutation(internal.scheduledSMS.logScheduledSMSAttempt, {
-        campaignId: args.campaignId,
-        batchNumber: args.batchNumber,
-        phoneNumbers: args.phoneNumbers,
-        message: args.message,
-        tag: args.tag,
-        status: "failed",
-        
-        // Error Details
-        errorMessage,
-        errorType: 'NETWORK_ERROR',
-        errorStack,
-        
-        // Performance Metrics
-        responseTime,
-        requestSize,
-        responseSize: 0,
-        
-        // Request Details
-        sourceNumber,
-        destinationCount,
-        messageLength,
-        
-        // Timestamps
-        sentAt: startTime,
-        receivedAt: Date.now(),
-        
-        // Additional Context
-        retryCount: 0,
-        userAgent: 'ShayaSMS-Tool-Scheduled/1.0',
-      });
+      // Store compact API request/response directly on a corresponding segment if exists
+      try {
+        const segments = await ctx.runQuery(internal.scheduledSMS.getSegmentsByCampaignAndBatch, {
+          campaignId: args.campaignId,
+          batchNumber: args.batchNumber,
+        });
+        if (segments && segments.length > 0) {
+          await ctx.runMutation(internal.scheduledSMS.patchSegmentApiPayload, {
+            segmentId: segments[0]._id,
+            apiRequest: requestBody,
+            apiResponse: JSON.stringify({ error: errorMessage, stack: errorStack }),
+            httpStatusCode: undefined,
+            responseTime,
+            requestSize,
+            responseSize: 0,
+          });
+        }
+      } catch {}
 
       // Update campaign stats
       await ctx.runMutation(internal.scheduledSMS.updateScheduledCampaignStats, {
@@ -435,3 +398,41 @@ export const getScheduledFunctionsForCampaign = internalMutation({
     return scheduledFunctions;
   },
 }); 
+
+// Helper to find segment by campaign and batch for scheduled runs
+export const getSegmentsByCampaignAndBatch = internalQuery({
+  args: {
+    campaignId: v.id("campaigns"),
+    batchNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("segments")
+      .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
+      .filter((q) => q.eq(q.field("batchNumber"), args.batchNumber))
+      .collect();
+  },
+});
+
+// Helper to patch API payload onto a segment
+export const patchSegmentApiPayload = internalMutation({
+  args: {
+    segmentId: v.id("segments"),
+    apiRequest: v.optional(v.string()),
+    apiResponse: v.optional(v.string()),
+    httpStatusCode: v.optional(v.number()),
+    responseTime: v.optional(v.number()),
+    requestSize: v.optional(v.number()),
+    responseSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.segmentId, {
+      apiRequest: args.apiRequest,
+      apiResponse: args.apiResponse,
+      httpStatusCode: args.httpStatusCode,
+      responseTime: args.responseTime,
+      requestSize: args.requestSize,
+      responseSize: args.responseSize,
+    });
+  },
+});
