@@ -672,9 +672,10 @@ export const createCampaignWithSegments = mutation({
 
     const isScheduled = Boolean(args.scheduledFor && args.scheduledFor > Date.now());
 
+    // Handle empty arrays for large campaigns that will be added in chunks
     const totalNumbers = args.numbers.length;
     const batchSize = 100;
-    const totalBatches = Math.ceil(totalNumbers / batchSize);
+    const totalBatches = totalNumbers > 0 ? Math.ceil(totalNumbers / batchSize) : 0;
 
     const campaignId = await ctx.db.insert("campaigns", {
       name: args.name,
@@ -700,18 +701,21 @@ export const createCampaignWithSegments = mutation({
       lastUpdated: Date.now(),
     });
 
-    for (let i = 0; i < totalBatches; i++) {
-      const batchNumbers = args.numbers.slice(i * batchSize, (i + 1) * batchSize);
-      await ctx.db.insert("segments", {
-        campaignId,
-        batchNumber: i + 1,
-        numbers: batchNumbers,
-        status: "pending",
-        sentCount: 0,
-        failedCount: 0,
-        createdAt: Date.now(),
-        scheduledFor: args.scheduledFor || undefined,
-      });
+    // Only create segments if numbers are provided
+    if (totalNumbers > 0) {
+      for (let i = 0; i < totalBatches; i++) {
+        const batchNumbers = args.numbers.slice(i * batchSize, (i + 1) * batchSize);
+        await ctx.db.insert("segments", {
+          campaignId,
+          batchNumber: i + 1,
+          numbers: batchNumbers,
+          status: "pending",
+          sentCount: 0,
+          failedCount: 0,
+          createdAt: Date.now(),
+          scheduledFor: args.scheduledFor || undefined,
+        });
+      }
     }
 
     if (isScheduled && args.scheduledFor) {
@@ -978,5 +982,64 @@ export const resumeCampaign = mutation({
 });
 
 // Note: For scheduled runs, schedule a call to api.sms.startCampaignJob at the campaign's scheduled time.
+
+// Add segment to existing campaign (for large datasets)
+export const addSegmentToCampaign = mutation({
+  args: {
+    campaignId: v.id("campaigns"),
+    batchNumber: v.number(),
+    numbers: v.array(v.string()),
+    scheduledFor: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // Validate input
+    if (!args.numbers || args.numbers.length === 0) {
+      throw new Error("No phone numbers provided for segment");
+    }
+
+    // Remove duplicates and validate phone numbers
+    const uniqueNumbers = [...new Set(args.numbers)];
+    const validNumbers = uniqueNumbers.filter(num => {
+      const cleanNum = num.toString().trim();
+      return cleanNum.length >= 9 && !isNaN(Number(cleanNum));
+    });
+
+    if (validNumbers.length === 0) {
+      throw new Error("No valid phone numbers found in segment");
+    }
+
+    // Check if campaign exists
+    const campaign = await ctx.db.get(args.campaignId);
+    if (!campaign) {
+      throw new Error("Campaign not found");
+    }
+
+    // Create the segment
+    const segmentId = await ctx.db.insert("segments", {
+      campaignId: args.campaignId,
+      batchNumber: args.batchNumber,
+      numbers: validNumbers,
+      status: "pending",
+      sentCount: 0,
+      failedCount: 0,
+      createdAt: Date.now(),
+      scheduledFor: args.scheduledFor || undefined,
+    });
+
+    // Update campaign stats
+    const stats = await ctx.db
+      .query("campaignStats")
+      .withIndex("by_campaign", (q) => q.eq("campaignId", args.campaignId))
+      .first();
+
+    if (stats) {
+      await ctx.db.patch(stats._id, {
+        lastUpdated: Date.now(),
+      });
+    }
+
+    return segmentId;
+  },
+});
 
  

@@ -117,7 +117,8 @@ export default defineSchema({
       v.literal("pending"),
       v.literal("in_progress"),
       v.literal("sent"),
-      v.literal("failed")
+      v.literal("failed"),
+      v.literal("paused")
     ),
     sentCount: v.number(),
     failedCount: v.number(),

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useAction, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
@@ -33,7 +33,7 @@ const calculateSMSCount = (text) => {
     } else if (char === ' ') {
       totalChars += 1; // Space = 1 character
     } else {
-      // Check if character is Persian or Arabic
+      // Check if character is Persian or Arabict 
       const persianRegex = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
       if (persianRegex.test(char)) {
         totalChars += 1; // Persian/Arabic character = 1 character (70 chars per SMS)
@@ -56,6 +56,7 @@ const Dashboard = ({ onLogout, currentUser }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  // Removed unused state variables
 
   const [logs, setLogs] = useState([]);
   const fileInputRef = useRef(null);
@@ -75,84 +76,141 @@ const Dashboard = ({ onLogout, currentUser }) => {
 
   // Convex mutations and actions
   const createCampaignWithSegments = useMutation(api.sms.createCampaignWithSegments);
+  const addSegmentToCampaign = useMutation(api.sms.addSegmentToCampaign);
   const startCampaignJob = useAction(api.sms.startCampaignJob);
-  const updateCampaignStatusMutation = useMutation(api.sms.updateCampaignStatus);
 
   // User management queries and mutations
   const allUsers = useQuery(api.auth.getAllUsers);
   const createUserMutation = useMutation(api.auth.createUser);
   const deleteUserMutation = useMutation(api.auth.deleteUser);
 
-  const handleFileUpload = (event) => {
+    const handleFileUpload = (event) => {
     const file = event.target.files[0];
     console.log('File upload triggered:', file);
+    addLog(`File input triggered: ${file ? file.name : 'No file'}`);
     
     if (!file) {
       console.log('No file selected');
+      addLog('No file selected');
       return;
     }
 
     if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
       console.log('Invalid file type:', file.type, file.name);
+      addLog(`Invalid file type: ${file.type}, name: ${file.name}`);
       alert('Please upload a CSV file');
       return;
     }
 
     console.log('Processing CSV file:', file.name, 'Size:', file.size, 'bytes');
+    addLog(`Starting to process CSV file: ${file.name} (${file.size} bytes)`);
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      delimiter: '', // Auto-detect delimiter
-      complete: (results) => {
-        console.log('CSV parsing completed:', results);
-        
-        if (results.errors.length > 0) {
-          console.error('CSV parsing errors:', results.errors);
-          // Only show error if it's not just delimiter detection warnings
-          const nonEmptyErrors = results.errors.filter(error => 
-            error.message !== 'Too many fields' && 
-            error.message !== 'Delimiter not found' &&
-            error.message !== 'Unable to auto-detect delimiting character; defaulted to \',\''
-          );
-          if (nonEmptyErrors.length > 0) {
-            alert('Error parsing CSV file');
+    try {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        delimiter: '', // Auto-detect delimiter
+        complete: (results) => {
+          console.log('CSV parsing completed:', results);
+          addLog(`CSV parsing completed for ${file.name}`);
+          
+          if (results && results.errors && results.errors.length > 0) {
+            console.error('CSV parsing errors:', results.errors);
+            addLog(`CSV parsing errors found: ${results.errors.length} errors`);
+            // Only show error if it's not just delimiter detection warnings
+            const nonEmptyErrors = results.errors.filter(error => 
+              error.message !== 'Too many fields' && 
+              error.message !== 'Delimiter not found' &&
+              error.message !== 'Unable to auto-detect delimiting character; defaulted to \',\''
+            );
+            if (nonEmptyErrors.length > 0) {
+              alert('Error parsing CSV file');
+              addLog('CSV parsing failed due to errors');
+              return;
+            }
+          }
+
+          if (!results || !results.data) {
+            console.error('No data received from CSV parsing');
+            addLog('No data received from CSV file');
+            alert('Error: No data received from CSV file');
             return;
           }
+
+          console.log('Raw CSV data:', results.data);
+          const columnCount = results.data.length > 0 ? Object.keys(results.data[0]).length : 0;
+          addLog(`Raw CSV data received: ${results.data.length} rows with ${columnCount} columns`);
+
+          // Extract all numbers from all columns, including the first row
+          const allNumbers = [];
+          
+          // Include the first row (header) as well
+          results.data.forEach((row, index) => {
+            // Get all values from the row
+            const rowValues = Object.values(row);
+            rowValues.forEach((value, colIndex) => {
+              if (value && value.toString().trim() !== '') {
+                const cleanValue = value.toString().trim();
+                
+                // Remove common formatting characters
+                const cleanedNumber = cleanValue.replace(/[\s\-().+]/g, '');
+                
+                // Check if it's a valid phone number (at least 9 digits, max 15)
+                if (!isNaN(cleanedNumber) && cleanedNumber.length >= 9 && cleanedNumber.length <= 15) {
+                  allNumbers.push(cleanedNumber);
+                }
+              }
+            });
+          });
+
+          const numbers = allNumbers;
+
+          console.log('Extracted phone numbers:', numbers);
+          console.log('Total numbers found:', numbers.length);
+          addLog(`Extracted ${numbers.length} valid phone numbers`);
+
+          if (numbers.length === 0) {
+            console.log('No valid phone numbers found in CSV');
+            addLog('No valid phone numbers found in CSV file');
+            alert('No valid phone numbers found in CSV file. Please check the format.');
+            return;
+          }
+
+          setCsvData({
+            numbers,
+            fileName: file.name,
+            totalCount: numbers.length,
+            file: file // Keep the file reference
+          });
+
+          addLog(`✅ CSV uploaded successfully: ${numbers.length} phone numbers loaded from ${file.name}`);
+          console.log('CSV data set:', { numbers, fileName: file.name, totalCount: numbers.length });
+          
+          // Clear the file input for next upload
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        },
+        error: (error) => {
+          console.error('CSV parsing error:', error);
+          addLog(`❌ CSV parsing error: ${error.message}`);
+          alert('Error reading CSV file');
         }
-
-        const numbers = results.data
-          .map(row => Object.values(row)[0]) // Get first column
-          .filter(number => number && number.trim() !== '') // Remove empty values
-          .map(number => number.toString().trim())
-          .filter(number => number.length > 0) // Additional filter for empty strings
-          .filter(number => !isNaN(number) && number.length >= 10); // Only valid phone numbers
-
-        console.log('Extracted phone numbers:', numbers);
-        console.log('Total numbers found:', numbers.length);
-        console.log('Raw CSV data:', results.data);
-
-        if (numbers.length === 0) {
-          console.log('No valid phone numbers found in CSV');
-          alert('No valid phone numbers found in CSV file. Please check the format.');
-          return;
-        }
-
-        setCsvData({
-          numbers,
-          fileName: file.name,
-          totalCount: numbers.length,
-          file: file // Keep the file reference
-        });
-
-        addLog(`CSV uploaded: ${numbers.length} phone numbers loaded from ${file.name}`);
-      },
-      error: (error) => {
-        console.error('CSV parsing error:', error);
-        alert('Error reading CSV file');
-      }
-    });
+      });
+    } catch (error) {
+      console.error('Error during CSV parsing:', error);
+      addLog(`❌ Error during CSV parsing: ${error.message}`);
+      alert('Error processing CSV file: ' + error.message);
+    }
   };
+
+  // Auto-scroll logs to bottom when logs change
+  useEffect(() => {
+    const logsContainer = document.querySelector('.logs-container');
+    if (logsContainer) {
+      logsContainer.scrollTop = logsContainer.scrollHeight;
+    }
+  }, [logs]);
 
   const addLog = (message) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -161,7 +219,7 @@ const Dashboard = ({ onLogout, currentUser }) => {
     setLogs(prev => [...prev, logEntry]);
   };
 
-  const sendSMSBatch = async () => {};
+  // Removed unused function
 
   const handleSendSMS = async () => {
     console.log('Send SMS button clicked');
@@ -169,14 +227,18 @@ const Dashboard = ({ onLogout, currentUser }) => {
     console.log('Message:', message);
     console.log('Tag:', tag);
 
+    addLog('🚀 Starting SMS campaign...');
+
     if (!csvData || csvData.numbers.length === 0) {
       console.log('No CSV data or numbers found');
+      addLog('❌ No CSV data or numbers found');
       alert('Please upload a CSV file with phone numbers');
       return;
     }
 
     if (!message.trim()) {
       console.log('No message entered');
+      addLog('❌ No message entered');
       alert('Please enter a message');
       return;
     }
@@ -202,37 +264,81 @@ const Dashboard = ({ onLogout, currentUser }) => {
         scheduledTimestamp = scheduledDateTime.getTime();
         if (scheduledTimestamp <= Date.now()) {
           alert('Scheduled time must be in the future');
+          setIsLoading(false);
           return;
         }
       }
 
-      // Create campaign with segments stored on server
-      const campaignId = await createCampaignWithSegments({
-        name: tag || 'Campaign',
-        tag: tag || 'untagged',
-        message: plainTextMessage,
-        numbers: csvData.numbers,
-        createdBy: currentUser._id,
-        scheduledFor: scheduledTimestamp,
-      });
+      addLog(`📊 Campaign details: ${csvData.numbers.length} numbers, ${totalBatches} batches`);
 
-      addLog(`Campaign created with ID: ${campaignId}`);
+      // Check if we need to handle large datasets
+      const maxNumbersPerRequest = 8000; // Safe limit for Convex
+      let campaignId; // Declare campaignId at function scope
+      
+      if (csvData.numbers.length > maxNumbersPerRequest) {
+        addLog(`⚠️ Large dataset detected (${csvData.numbers.length} numbers). Processing in chunks...`);
+        
+        // Create campaign without numbers first
+        campaignId = await createCampaignWithSegments({
+          name: tag || 'Campaign',
+          tag: tag || 'untagged',
+          message: plainTextMessage,
+          numbers: [], // Empty array for large campaigns
+          createdBy: currentUser._id,
+          scheduledFor: scheduledTimestamp,
+        });
 
-      if (isScheduled) {
-        addLog(`Campaign scheduled for: ${new Date(scheduledTimestamp).toLocaleString('fa-IR')}`);
+        addLog(`✅ Campaign created with ID: ${campaignId}`);
+
+        // Now add segments in chunks
+        const chunkSize = 100; // 100 numbers per segment
+        for (let i = 0; i < csvData.numbers.length; i += chunkSize) {
+          const chunk = csvData.numbers.slice(i, i + chunkSize);
+          const batchNumber = Math.floor(i / chunkSize) + 1;
+          
+          addLog(`📦 Adding batch ${batchNumber}/${totalBatches} (${chunk.length} numbers)...`);
+          
+          // Add segment to campaign
+          await addSegmentToCampaign({
+            campaignId,
+            batchNumber,
+            numbers: chunk,
+            scheduledFor: scheduledTimestamp,
+          });
+        }
+
+        addLog(`✅ All ${totalBatches} batches added successfully`);
       } else {
-        // Start server-side job to send all segments
-        await startCampaignJob({ campaignId });
-        addLog('Server-side job started to send all segments');
+        // For smaller datasets, use the original approach
+        campaignId = await createCampaignWithSegments({
+          name: tag || 'Campaign',
+          tag: tag || 'untagged',
+          message: plainTextMessage,
+          numbers: csvData.numbers,
+          createdBy: currentUser._id,
+          scheduledFor: scheduledTimestamp,
+        });
+
+        addLog(`✅ Campaign created with ID: ${campaignId}`);
       }
 
-      addLog('Campaign completed successfully');
+      if (isScheduled) {
+        addLog(`⏰ Campaign scheduled for: ${new Date(scheduledTimestamp).toLocaleString('fa-IR')}`);
+      } else {
+        // Start server-side job to send all segments
+        addLog('🔄 Starting server-side job to send all segments...');
+        await startCampaignJob({ campaignId });
+        addLog('✅ Server-side job started successfully');
+      }
+
+      addLog('🎉 Campaign setup completed successfully');
     } catch (error) {
       console.error('Error in handleSendSMS:', error);
-      addLog(`Error: ${error.message}`);
+      addLog(`❌ Error: ${error.message}`);
     } finally {
       console.log('SMS sending process completed');
       setIsLoading(false);
+      addLog('🏁 SMS sending process completed');
     }
   };
 
@@ -545,7 +651,7 @@ const Dashboard = ({ onLogout, currentUser }) => {
                     id="csv-upload"
                   />
                   <label htmlFor="csv-upload" className="file-input-label">
-                    <div className="upload-area">
+                    <div className="upload-area" onClick={() => addLog('Upload area clicked')}>
                       {csvData ? (
                         <>
                           <span className="upload-icon">✅</span>
