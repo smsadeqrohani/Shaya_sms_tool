@@ -361,7 +361,7 @@ export const sendSMSBatch = action({
         
         // Additional Context
         retryCount: 0,
-        userAgent: 'ShayaSMS-Tool/1.0',
+        userAgent: 'FilmnetSMS-Tool/1.0',
       });
 
       // Update campaign stats
@@ -422,7 +422,7 @@ export const sendSMSBatch = action({
         
         // Additional Context
         retryCount: 0,
-        userAgent: 'ShayaSMS-Tool/1.0',
+        userAgent: 'FilmnetSMS-Tool/1.0',
       });
 
       // Update campaign stats

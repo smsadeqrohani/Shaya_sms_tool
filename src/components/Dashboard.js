@@ -433,7 +433,7 @@ const Dashboard = ({ onLogout, currentUser }) => {
     <div className="dashboard-container">
       <header className="dashboard-header glass">
         <div className="header-content">
-          <h1 className="dashboard-title">Shaya SMS Tool</h1>
+          <h1 className="dashboard-title">Filmnet SMS Tool</h1>
           <div className="header-actions">
             <span className="user-info">
               {currentUser?.name || currentUser?.phoneNumber} ({currentUser?.phoneNumber})

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Starting Shaya SMS Tool Development Environment..."
+echo "🚀 Starting Filmnet SMS Tool Development Environment..."
 echo ""
 
 # Check if node_modules exists

@@ -1,4 +1,4 @@
-# Shaya SMS Tool
+# Filmnet SMS Tool
 
 A modern, dark-themed web application for sending SMS messages in batches using CSV files. Built with React and featuring a beautiful glass-morphism design.
 
@@ -26,8 +26,8 @@ A modern, dark-themed web application for sending SMS messages in batches using 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/smsadeqrohani/Shaya_sms_tool.git
-cd Shaya_sms_tool
+git clone https://github.com/smsadeqrohani/Filmnet_sms_tool.git
+cd Filmnet_sms_tool
 ```
 
 2. Install dependencies:
@@ -343,5 +343,5 @@ This project is licensed under the MIT License.
 
 For support and questions, please contact the development team. 
 =======
-# Shaya_sms_tool
+# Filmnet_sms_tool
 >>>>>>> 14ac9835af2d136c26ccec7030f7ef08d407a73c

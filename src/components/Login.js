@@ -81,7 +81,7 @@ const Login = ({ onLogin }) => {
     <div className="login-container">
       <div className="login-card glass">
         <div className="login-header">
-          <h1 className="login-title">Shaya SMS Tool</h1>
+          <h1 className="login-title">Filmnet SMS Tool</h1>
           <p className="login-subtitle">Send SMS messages with ease</p>
         </div>
 

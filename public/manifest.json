@@ -1,15 +1,13 @@
 {
-  "short_name": "Shaya SMS Tool",
-  "name": "Shaya SMS Tool - Modern SMS Sending Application",
-  "icons": [
-    {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
-    }
-  ],
+  "short_name": "Filmnet SMS Tool",
+  "name": "Filmnet SMS Tool - Bulk SMS Campaign Manager",
+  "description": "Modern SMS sending application for bulk SMS campaigns with CSV support",
+  "icons": [],
   "start_url": ".",
   "display": "standalone",
   "theme_color": "#A8233C",
-  "background_color": "#0f0f23"
+  "background_color": "#0f0f23",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "en"
 } 
