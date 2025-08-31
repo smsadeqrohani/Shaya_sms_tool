@@ -125,6 +125,23 @@ export const login = mutation({
   },
 });
 
+// Validate session - check if user exists and is valid
+export const validateSession = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) {
+      return null;
+    }
+    
+    return {
+      _id: user._id,
+      phoneNumber: user.phoneNumber,
+      name: user.name || user.phoneNumber,
+    };
+  },
+});
+
 // Get user by phone number
 export const getUserByPhone = query({
   args: { phoneNumber: v.string() },

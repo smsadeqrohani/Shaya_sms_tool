@@ -1,47 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Reports from './components/Reports';
 import DatabaseInitializer from './components/DatabaseInitializer';
+import { useAuth } from './hooks/useAuth';
 import './App.css';
 
 const convex = new ConvexReactClient(process.env.REACT_APP_CONVEX_URL);
 
-function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
+function AppContent() {
+  const { isAuthenticated, currentUser, isLoading, logout } = useAuth();
 
-  // Debug logging
-  useEffect(() => {
-    console.log('Auth state changed:', { isAuthenticated, currentUser });
-  }, [isAuthenticated, currentUser]);
-
-  const handleLogin = (success, user) => {
-    console.log('Login attempt:', { success, user });
-    setIsAuthenticated(success);
-    setCurrentUser(user);
-  };
-
-  const handleLogout = () => {
-    console.log('Logout called');
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-  };
+  // Show loading screen while checking authentication
+  if (isLoading) {
+    return (
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
+      </div>
+    );
+  }
 
   const router = createBrowserRouter([
     {
       path: "/login",
-      element: isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login onLogin={handleLogin} />
+      element: isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />
     },
     {
       path: "/dashboard", 
-      element: isAuthenticated ? <Dashboard onLogout={handleLogout} currentUser={currentUser} /> : <Navigate to="/login" replace />
+      element: isAuthenticated ? <Dashboard onLogout={logout} currentUser={currentUser} /> : <Navigate to="/login" replace />
     },
     {
       path: "/reports",
-      element: isAuthenticated ? <Reports onLogout={handleLogout} currentUser={currentUser} /> : <Navigate to="/login" replace />
+      element: isAuthenticated ? <Reports onLogout={logout} currentUser={currentUser} /> : <Navigate to="/login" replace />
     },
     {
       path: "/",
@@ -55,11 +48,17 @@ function App() {
   });
 
   return (
+    <div className="App">
+      <DatabaseInitializer />
+      <RouterProvider router={router} />
+    </div>
+  );
+}
+
+function App() {
+  return (
     <ConvexProvider client={convex}>
-      <div className="App">
-        <DatabaseInitializer />
-        <RouterProvider router={router} />
-      </div>
+      <AppContent />
     </ConvexProvider>
   );
 }

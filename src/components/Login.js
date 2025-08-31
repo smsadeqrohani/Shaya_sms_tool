@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { useMutation } from 'convex/react';
-import { api } from '../convex/_generated/api';
+import { useAuth } from '../hooks/useAuth';
 import './Login.css';
 
-const Login = ({ onLogin }) => {
+const Login = () => {
   const [formData, setFormData] = useState({
     phoneNumber: '',
     password: ''
@@ -11,7 +10,7 @@ const Login = ({ onLogin }) => {
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
-  const loginMutation = useMutation(api.auth.login);
+  const { login } = useAuth();
 
   const validateForm = () => {
     const newErrors = {};
@@ -61,12 +60,14 @@ const Login = ({ onLogin }) => {
     setIsLoading(true);
     
     try {
-      const user = await loginMutation({
-        phoneNumber: formData.phoneNumber,
-        password: formData.password
-      });
+      const result = await login(formData.phoneNumber, formData.password);
       
-      onLogin(true, user);
+      if (!result.success) {
+        setErrors({
+          general: result.error || 'Login failed'
+        });
+      }
+      // If successful, the useAuth hook will handle the state update and navigation
     } catch (error) {
       console.error('Login error:', error);
       setErrors({
