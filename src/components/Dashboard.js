@@ -445,6 +445,9 @@ const Dashboard = ({ onLogout, currentUser }) => {
               <button onClick={() => navigate('/reports')} className="btn btn-outline btn-sm">
                 📊 Reports
               </button>
+              <button onClick={() => navigate('/guide')} className="btn btn-outline btn-sm">
+                📚 Guide
+              </button>
               <button onClick={handleLogout} className="btn btn-outline">
                 Logout
               </button>

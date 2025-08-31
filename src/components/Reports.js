@@ -259,6 +259,9 @@ const Reports = ({ onLogout, currentUser }) => {
               <button onClick={() => navigate('/dashboard')} className="btn btn-outline btn-sm">
                 📱 Dashboard
               </button>
+              <button onClick={() => navigate('/guide')} className="btn btn-outline btn-sm">
+                📚 Guide
+              </button>
               <button onClick={onLogout} className="btn btn-outline">
                 Logout
               </button>

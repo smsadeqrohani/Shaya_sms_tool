@@ -4,6 +4,7 @@ import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Reports from './components/Reports';
+import Guide from './components/Guide';
 import DatabaseInitializer from './components/DatabaseInitializer';
 import { useAuth } from './hooks/useAuth';
 import './App.css';
@@ -35,6 +36,10 @@ function AppContent() {
     {
       path: "/reports",
       element: isAuthenticated ? <Reports onLogout={logout} currentUser={currentUser} /> : <Navigate to="/login" replace />
+    },
+    {
+      path: "/guide",
+      element: isAuthenticated ? <Guide /> : <Navigate to="/login" replace />
     },
     {
       path: "/",
