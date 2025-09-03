@@ -78,110 +78,7 @@ export const createCampaign = mutation({
 });
 
 // Enhanced mutation to log SMS attempt with detailed information
-export const logSMSAttempt = mutation({
-  args: {
-    campaignId: v.id("campaigns"),
-    batchNumber: v.number(),
-    phoneNumbers: v.array(v.string()),
-    message: v.string(),
-    tag: v.string(),
-    status: v.union(v.literal("success"), v.literal("failed"), v.literal("partial_success")),
-    
-    // HTTP Response Details
-    httpStatusCode: v.optional(v.number()),
-    httpStatusText: v.optional(v.string()),
-    
-    // API Response Details
-    apiStatusCode: v.optional(v.string()),
-    apiMessage: v.optional(v.string()),
-    apiStatus: v.optional(v.boolean()),
-    apiResponseData: v.optional(v.string()),
-    
-    // Error Details
-    errorMessage: v.optional(v.string()),
-    errorType: v.optional(v.string()),
-    errorStack: v.optional(v.string()),
-    
-    // Performance Metrics
-    responseTime: v.optional(v.number()),
-    requestSize: v.optional(v.number()),
-    responseSize: v.optional(v.number()),
-    
-    // Request Details
-    sourceNumber: v.string(),
-    destinationCount: v.number(),
-    messageLength: v.number(),
-    
-    // Timestamps
-    sentAt: v.number(),
-    receivedAt: v.optional(v.number()),
-    
-    // Additional Context
-    retryCount: v.optional(v.number()),
-    userAgent: v.optional(v.string()),
-    ipAddress: v.optional(v.string()),
-    
-    // Detailed Results
-    successfulNumbers: v.optional(v.array(v.string())),
-    failedNumbers: v.optional(v.array(v.string())),
-    individualResults: v.optional(v.array(v.object({
-      phoneNumber: v.string(),
-      status: v.union(v.literal("success"), v.literal("failed")),
-      message: v.optional(v.string()),
-      errorCode: v.optional(v.string()),
-    }))),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db.insert("smsLogs", {
-      campaignId: args.campaignId,
-      batchNumber: args.batchNumber,
-      batchSize: args.phoneNumbers.length,
-      phoneNumbers: args.phoneNumbers,
-      message: args.message,
-      tag: args.tag,
-      status: args.status,
-      
-      // HTTP Response Details
-      httpStatusCode: args.httpStatusCode,
-      httpStatusText: args.httpStatusText,
-      
-      // API Response Details
-      apiStatusCode: args.apiStatusCode,
-      apiMessage: args.apiMessage,
-      apiStatus: args.apiStatus,
-      apiResponseData: args.apiResponseData,
-      
-      // Error Details
-      errorMessage: args.errorMessage,
-      errorType: args.errorType,
-      errorStack: args.errorStack,
-      
-      // Performance Metrics
-      responseTime: args.responseTime,
-      requestSize: args.requestSize,
-      responseSize: args.responseSize,
-      
-      // Request Details
-      sourceNumber: args.sourceNumber,
-      destinationCount: args.destinationCount,
-      messageLength: args.messageLength,
-      
-      // Timestamps
-      sentAt: args.sentAt,
-      receivedAt: args.receivedAt,
-      
-      // Additional Context
-      retryCount: args.retryCount,
-      userAgent: args.userAgent,
-      ipAddress: args.ipAddress,
-      
-      // Detailed Results
-      successfulNumbers: args.successfulNumbers,
-      failedNumbers: args.failedNumbers,
-      individualResults: args.individualResults,
-    });
-  },
-});
+// Removed legacy logSMSAttempt. Logging is now done by updating the corresponding segment.
 
 // Enhanced mutation to update campaign stats with detailed metrics
 export const updateCampaignStats = mutation({
@@ -312,7 +209,7 @@ export const sendSMSBatch = action({
       }
 
       const isSuccess = response.ok && responseData.status === true;
-      const status = isSuccess ? "success" : "failed";
+      const status = isSuccess ? "sent" : "failed";
       
       console.log(`SMS batch ${args.batchNumber} result:`, {
         status,
@@ -322,47 +219,41 @@ export const sendSMSBatch = action({
         message: responseData.message
       });
 
-      // Log the SMS attempt with detailed information
-      const logId: any = await ctx.runMutation(api.sms.logSMSAttempt, {
-        campaignId: args.campaignId,
-        batchNumber: args.batchNumber,
-        phoneNumbers: args.phoneNumbers,
-        message: args.message,
-        tag: args.tag,
-        status,
-        
-        // HTTP Response Details
-        httpStatusCode: response.status,
-        httpStatusText: response.statusText,
-        
-        // API Response Details
-        apiStatusCode: responseData.statusCode ? String(responseData.statusCode) : undefined,
-        apiMessage: responseData.message,
-        apiStatus: responseData.status,
-        apiResponseData: JSON.stringify(responseData),
-        
-        // Error Details
-        errorMessage: isSuccess ? undefined : responseData.message,
-        errorType: isSuccess ? undefined : 'API_ERROR',
-        
-        // Performance Metrics
-        responseTime,
-        requestSize,
-        responseSize,
-        
-        // Request Details
-        sourceNumber,
-        destinationCount,
-        messageLength,
-        
-        // Timestamps
-        sentAt: startTime,
-        receivedAt: Date.now(),
-        
-        // Additional Context
-        retryCount: 0,
-        userAgent: 'FilmnetSMS-Tool/1.0',
-      });
+      // Update the corresponding segment with detailed information
+      const segs = await ctx.runQuery(api.sms.getCampaignSegments, { campaignId: args.campaignId });
+      const target = segs.find((s: any) => s.batchNumber === args.batchNumber);
+      if (target) {
+        await ctx.runMutation(internal.scheduledSMS.updateSegmentWithLogging, {
+          segmentId: target._id,
+          status,
+          sentCount: isSuccess ? destinationCount : 0,
+          failedCount: isSuccess ? 0 : destinationCount,
+          completedAt: Date.now(),
+          lastError: isSuccess ? undefined : responseData.message,
+          message: args.message,
+          tag: args.tag,
+          httpStatusCode: response.status,
+          httpStatusText: response.statusText,
+          apiStatusCode: responseData.statusCode ? String(responseData.statusCode) : undefined,
+          apiMessage: responseData.message,
+          apiStatus: responseData.status,
+          apiResponseData: JSON.stringify(responseData),
+          errorMessage: isSuccess ? undefined : responseData.message,
+          errorType: isSuccess ? undefined : 'API_ERROR',
+          responseTime,
+          requestSize,
+          responseSize,
+          sourceNumber,
+          destinationCount,
+          messageLength,
+          sentAt: startTime,
+          receivedAt: Date.now(),
+          retryCount: 0,
+          userAgent: 'FilmnetSMS-Tool/1.0',
+          apiRequest: requestBody,
+          apiResponse: responseText,
+        });
+      }
 
       // Update campaign stats
       await ctx.runMutation(api.sms.updateCampaignStats, {
@@ -376,14 +267,7 @@ export const sendSMSBatch = action({
         isSuccess,
       });
 
-      return {
-        success: isSuccess,
-        logId,
-        responseData,
-        responseTime,
-        status,
-        message: responseData.message,
-      };
+      return { success: isSuccess, responseData, responseTime, status, message: responseData.message };
 
     } catch (error) {
       const responseTime = Date.now() - startTime;
@@ -392,38 +276,36 @@ export const sendSMSBatch = action({
       
       console.error(`SMS batch ${args.batchNumber} error:`, error);
       
-      // Log the error with detailed information
-      const logId: any = await ctx.runMutation(api.sms.logSMSAttempt, {
-        campaignId: args.campaignId,
-        batchNumber: args.batchNumber,
-        phoneNumbers: args.phoneNumbers,
-        message: args.message,
-        tag: args.tag,
-        status: "failed",
-        
-        // Error Details
-        errorMessage,
-        errorType: 'NETWORK_ERROR',
-        errorStack,
-        
-        // Performance Metrics
-        responseTime,
-        requestSize,
-        responseSize: 0,
-        
-        // Request Details
-        sourceNumber,
-        destinationCount,
-        messageLength,
-        
-        // Timestamps
-        sentAt: startTime,
-        receivedAt: Date.now(),
-        
-        // Additional Context
-        retryCount: 0,
-        userAgent: 'FilmnetSMS-Tool/1.0',
-      });
+      // Update the corresponding segment with error information
+      const segs = await ctx.runQuery(api.sms.getCampaignSegments, { campaignId: args.campaignId });
+      const target = segs.find((s: any) => s.batchNumber === args.batchNumber);
+      if (target) {
+        await ctx.runMutation(internal.scheduledSMS.updateSegmentWithLogging, {
+          segmentId: target._id,
+          status: "failed",
+          sentCount: 0,
+          failedCount: destinationCount,
+          completedAt: Date.now(),
+          lastError: errorMessage,
+          message: args.message,
+          tag: args.tag,
+          errorMessage,
+          errorType: 'NETWORK_ERROR',
+          errorStack,
+          responseTime,
+          requestSize,
+          responseSize: 0,
+          sourceNumber,
+          destinationCount,
+          messageLength,
+          sentAt: startTime,
+          receivedAt: Date.now(),
+          retryCount: 0,
+          userAgent: 'FilmnetSMS-Tool/1.0',
+          apiRequest: requestBody,
+          apiResponse: JSON.stringify({ error: errorMessage, stack: errorStack }),
+        });
+      }
 
       // Update campaign stats
       await ctx.runMutation(api.sms.updateCampaignStats, {
@@ -437,13 +319,7 @@ export const sendSMSBatch = action({
         isSuccess: false,
       });
 
-      return {
-        success: false,
-        logId,
-        error: errorMessage,
-        responseTime,
-        status: "failed",
-      };
+      return { success: false, error: errorMessage, responseTime, status: "failed" };
     }
   },
 });
@@ -527,25 +403,25 @@ export const getCampaignLogs = query({
   args: { campaignId: v.id("campaigns"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 200;
-    const logs = await ctx.db
-      .query("smsLogs")
+    const segments = await ctx.db
+      .query("segments")
       .withIndex("by_campaign_sent_at", (q) => q.eq("campaignId", args.campaignId))
       .order("desc")
       .take(limit);
 
-    // Trim heavy fields to reduce payload size
-    return logs.map((log) => ({
-      _id: log._id,
-      campaignId: log.campaignId,
-      batchNumber: log.batchNumber,
-      batchSize: log.batchSize,
-      status: log.status,
-      responseTime: log.responseTime,
-      httpStatusCode: log.httpStatusCode,
-      apiMessage: log.apiMessage,
-      sentAt: log.sentAt,
-      errorMessage: log.errorMessage,
-      // apiResponseData intentionally omitted for performance
+    return segments.map((seg) => ({
+      _id: seg._id,
+      campaignId: seg.campaignId,
+      batchNumber: seg.batchNumber,
+      batchSize: seg.numbers.length,
+      status: seg.status,
+      responseTime: seg.responseTime,
+      httpStatusCode: seg.httpStatusCode,
+      apiMessage: seg.apiMessage,
+      sentAt: seg.sentAt,
+      errorMessage: seg.errorMessage,
+      sentCount: seg.sentCount,
+      failedCount: seg.failedCount,
     }));
   },
 });
@@ -607,10 +483,16 @@ export const getScheduledFunctions = query({
 export const getAllBatchLogs = query({
   args: {
     limit: v.optional(v.number()),
-    status: v.optional(v.union(v.literal("success"), v.literal("failed"), v.literal("partial_success"))),
+    status: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("sent"),
+      v.literal("failed"),
+      v.literal("paused")
+    )),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query("smsLogs").withIndex("by_sent_at", (q) => q);
+    let query = ctx.db.query("segments").withIndex("by_sent_at", (q) => q);
     
     if (args.status) {
       query = query.filter((q) => q.eq(q.field("status"), args.status));
@@ -632,7 +514,7 @@ export const getRecentBatchLogs = query({
   handler: async (ctx, args) => {
     const limit = args.limit || 20;
     
-    return await ctx.db.query("smsLogs")
+    return await ctx.db.query("segments")
       .withIndex("by_sent_at", (q) => q)
       .order("desc")
       .take(limit);
@@ -655,6 +537,8 @@ export const migrateCampaignStats = mutation({
     return { migrated: allStats.length };
   },
 });
+
+// Legacy migration removed; all logging is now stored on segments.
 
 export const createCampaignWithSegments = mutation({
   args: {

@@ -14,6 +14,7 @@ export default defineSchema({
   // SMS Campaigns table
   campaigns: defineTable({
     name: v.optional(v.string()),
+    type: v.optional(v.string()),
     tag: v.string(),
     message: v.string(),
     totalNumbers: v.number(),
@@ -35,15 +36,47 @@ export default defineSchema({
     isScheduled: v.optional(v.boolean()), // Flag to identify scheduled campaigns
   }).index("by_tag", ["tag"]).index("by_created_at", ["createdAt"]).index("by_scheduled", ["scheduledFor"]),
 
-  // SMS Logs table for detailed tracking
-  smsLogs: defineTable({
+  // Campaign Statistics for quick reporting
+  campaignStats: defineTable({
+    campaignId: v.id("campaigns"),
+    totalSent: v.number(),
+    totalFailed: v.number(),
+    totalSuccess: v.number(),
+    totalPartialSuccess: v.number(), // New field for partial successes
+    averageResponseTime: v.optional(v.number()),
+    minResponseTime: v.optional(v.number()),
+    maxResponseTime: v.optional(v.number()),
+    totalResponseTime: v.optional(v.number()), // Sum of all response times
+    requestCount: v.number(), // Number of API requests made
+    lastUpdated: v.number(),
+    lastError: v.optional(v.string()), // Last error message
+    lastSuccessAt: v.optional(v.number()), // Timestamp of last success
+    lastFailureAt: v.optional(v.number()), // Timestamp of last failure
+  }).index("by_campaign", ["campaignId"]),
+
+  // Enhanced Segments table: stores 100-number batches per campaign with detailed logging
+  segments: defineTable({
     campaignId: v.id("campaigns"),
     batchNumber: v.number(),
-    batchSize: v.number(),
-    phoneNumbers: v.array(v.string()),
-    message: v.string(), // The actual message sent
-    tag: v.string(), // The tag used for this batch
-    status: v.union(v.literal("success"), v.literal("failed"), v.literal("partial_success")),
+    numbers: v.array(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("sent"),
+      v.literal("failed"),
+      v.literal("paused")
+    ),
+    sentCount: v.number(),
+    failedCount: v.number(),
+    createdAt: v.number(),
+    scheduledFor: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    
+    // Enhanced logging fields (previously in a separate logs table)
+    message: v.optional(v.string()), // The actual message sent
+    tag: v.optional(v.string()), // The tag used for this batch
     
     // HTTP Response Details
     httpStatusCode: v.optional(v.number()),
@@ -66,12 +99,12 @@ export default defineSchema({
     responseSize: v.optional(v.number()), // Size of response in bytes
     
     // Request Details
-    sourceNumber: v.string(), // The sender number
-    destinationCount: v.number(), // Number of destination numbers
-    messageLength: v.number(), // Length of the message
+    sourceNumber: v.optional(v.string()), // The sender number
+    destinationCount: v.optional(v.number()), // Number of destination numbers
+    messageLength: v.optional(v.number()), // Length of the message
     
     // Timestamps
-    sentAt: v.number(),
+    sentAt: v.optional(v.number()),
     receivedAt: v.optional(v.number()), // When response was received
     
     // Additional Context
@@ -88,54 +121,14 @@ export default defineSchema({
       message: v.optional(v.string()),
       errorCode: v.optional(v.string()),
     }))),
-  }).index("by_campaign", ["campaignId"]).index("by_sent_at", ["sentAt"]).index("by_status", ["status"]).index("by_campaign_sent_at", ["campaignId", "sentAt"]),
-
-  // Campaign Statistics for quick reporting
-  campaignStats: defineTable({
-    campaignId: v.id("campaigns"),
-    totalSent: v.number(),
-    totalFailed: v.number(),
-    totalSuccess: v.number(),
-    totalPartialSuccess: v.number(), // New field for partial successes
-    averageResponseTime: v.optional(v.number()),
-    minResponseTime: v.optional(v.number()),
-    maxResponseTime: v.optional(v.number()),
-    totalResponseTime: v.optional(v.number()), // Sum of all response times
-    requestCount: v.number(), // Number of API requests made
-    lastUpdated: v.number(),
-    lastError: v.optional(v.string()), // Last error message
-    lastSuccessAt: v.optional(v.number()), // Timestamp of last success
-    lastFailureAt: v.optional(v.number()), // Timestamp of last failure
-  }).index("by_campaign", ["campaignId"]),
-
-  // Segments (batches) table: stores 100-number batches per campaign
-  segments: defineTable({
-    campaignId: v.id("campaigns"),
-    batchNumber: v.number(),
-    numbers: v.array(v.string()),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("in_progress"),
-      v.literal("sent"),
-      v.literal("failed"),
-      v.literal("paused")
-    ),
-    sentCount: v.number(),
-    failedCount: v.number(),
-    createdAt: v.number(),
-    scheduledFor: v.optional(v.number()),
-    startedAt: v.optional(v.number()),
-    completedAt: v.optional(v.number()),
-    lastError: v.optional(v.string()),
-    // API request/response captured at send time to avoid large smsLogs table
+    
+    // Legacy API request/response fields (kept for backward compatibility)
     apiRequest: v.optional(v.string()),
     apiResponse: v.optional(v.string()),
-    httpStatusCode: v.optional(v.number()),
-    responseTime: v.optional(v.number()),
-    requestSize: v.optional(v.number()),
-    responseSize: v.optional(v.number()),
   })
     .index("by_campaign", ["campaignId"]) 
     .index("by_campaign_status", ["campaignId", "status"]) 
-    .index("by_scheduled", ["scheduledFor"]),
+    .index("by_scheduled", ["scheduledFor"])
+    .index("by_sent_at", ["sentAt"]) // New index for reporting
+    .index("by_campaign_sent_at", ["campaignId", "sentAt"]), // New index for campaign logs
 }); 

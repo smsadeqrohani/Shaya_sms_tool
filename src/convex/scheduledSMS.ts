@@ -68,7 +68,6 @@ export const sendScheduledSMS = internalAction({
       const responseTime = Date.now() - startTime;
       const responseText = await response.text();
       const responseSize = new TextEncoder().encode(responseText).length;
-      const requestSize = new TextEncoder().encode(requestBody).length;
       
       let responseData;
       try {
@@ -79,7 +78,7 @@ export const sendScheduledSMS = internalAction({
       }
 
       const isSuccess = response.ok && responseData.status === true;
-      const status = isSuccess ? "success" : "failed";
+      const status = isSuccess ? "sent" : "failed";
       
       console.log(`Scheduled SMS batch ${args.batchNumber} result:`, {
         status,
@@ -89,24 +88,49 @@ export const sendScheduledSMS = internalAction({
         message: responseData.message
       });
 
-      // Store compact API request/response directly on a corresponding segment if exists
-      try {
-        const segments = await ctx.runQuery(internal.scheduledSMS.getSegmentsByCampaignAndBatch, {
-          campaignId: args.campaignId,
-          batchNumber: args.batchNumber,
+      // Find and update the corresponding segment with detailed logging
+      const segments = await ctx.runQuery(internal.scheduledSMS.getSegmentsByCampaignAndBatch, {
+        campaignId: args.campaignId,
+        batchNumber: args.batchNumber,
+      });
+
+      if (segments && segments.length > 0) {
+        const segment = segments[0];
+        await ctx.runMutation(internal.scheduledSMS.updateSegmentWithLogging, {
+          segmentId: segment._id,
+          status: status,
+          sentCount: isSuccess ? destinationCount : 0,
+          failedCount: isSuccess ? 0 : destinationCount,
+          completedAt: Date.now(),
+          lastError: isSuccess ? undefined : responseData.message,
+          
+          // Enhanced logging fields
+          message: args.message,
+          tag: args.tag,
+          httpStatusCode: response.status,
+          httpStatusText: response.statusText,
+          apiStatusCode: responseData.statusCode ? String(responseData.statusCode) : undefined,
+          apiMessage: responseData.message,
+          apiStatus: responseData.status,
+          apiResponseData: JSON.stringify(responseData),
+          errorMessage: isSuccess ? undefined : responseData.message,
+          errorType: isSuccess ? undefined : 'API_ERROR',
+          responseTime,
+          requestSize,
+          responseSize,
+          sourceNumber,
+          destinationCount,
+          messageLength,
+          sentAt: startTime,
+          receivedAt: Date.now(),
+          retryCount: 0,
+          userAgent: 'FilmnetSMS-Tool/1.0',
+          
+          // Legacy fields for backward compatibility
+          apiRequest: requestBody,
+          apiResponse: responseText,
         });
-        if (segments && segments.length > 0) {
-          await ctx.runMutation(internal.scheduledSMS.patchSegmentApiPayload, {
-            segmentId: segments[0]._id,
-            apiRequest: requestBody,
-            apiResponse: responseText,
-            httpStatusCode: response.status,
-            responseTime,
-            requestSize,
-            responseSize,
-          });
-        }
-      } catch {}
+      }
 
       // Update campaign stats
       await ctx.runMutation(internal.scheduledSMS.updateScheduledCampaignStats, {
@@ -147,24 +171,44 @@ export const sendScheduledSMS = internalAction({
       
       console.error(`Scheduled SMS failed for campaign ${args.campaignId}, batch ${args.batchNumber}:`, error);
       
-      // Store compact API request/response directly on a corresponding segment if exists
-      try {
-        const segments = await ctx.runQuery(internal.scheduledSMS.getSegmentsByCampaignAndBatch, {
-          campaignId: args.campaignId,
-          batchNumber: args.batchNumber,
+      // Find and update the corresponding segment with error logging
+      const segments = await ctx.runQuery(internal.scheduledSMS.getSegmentsByCampaignAndBatch, {
+        campaignId: args.campaignId,
+        batchNumber: args.batchNumber,
+      });
+
+      if (segments && segments.length > 0) {
+        const segment = segments[0];
+        await ctx.runMutation(internal.scheduledSMS.updateSegmentWithLogging, {
+          segmentId: segment._id,
+          status: "failed",
+          sentCount: 0,
+          failedCount: destinationCount,
+          completedAt: Date.now(),
+          lastError: errorMessage,
+          
+          // Enhanced logging fields
+          message: args.message,
+          tag: args.tag,
+          errorMessage,
+          errorType: 'NETWORK_ERROR',
+          errorStack,
+          responseTime,
+          requestSize,
+          responseSize: 0,
+          sourceNumber,
+          destinationCount,
+          messageLength,
+          sentAt: startTime,
+          receivedAt: Date.now(),
+          retryCount: 0,
+          userAgent: 'FilmnetSMS-Tool/1.0',
+          
+          // Legacy fields for backward compatibility
+          apiRequest: requestBody,
+          apiResponse: JSON.stringify({ error: errorMessage, stack: errorStack }),
         });
-        if (segments && segments.length > 0) {
-          await ctx.runMutation(internal.scheduledSMS.patchSegmentApiPayload, {
-            segmentId: segments[0]._id,
-            apiRequest: requestBody,
-            apiResponse: JSON.stringify({ error: errorMessage, stack: errorStack }),
-            httpStatusCode: undefined,
-            responseTime,
-            requestSize,
-            responseSize: 0,
-          });
-        }
-      } catch {}
+      }
 
       // Update campaign stats
       await ctx.runMutation(internal.scheduledSMS.updateScheduledCampaignStats, {
@@ -186,112 +230,6 @@ export const sendScheduledSMS = internalAction({
 
       throw error;
     }
-  },
-});
-
-// Helper mutation to log scheduled SMS attempts
-export const logScheduledSMSAttempt = internalMutation({
-  args: {
-    campaignId: v.id("campaigns"),
-    batchNumber: v.number(),
-    phoneNumbers: v.array(v.string()),
-    message: v.string(),
-    tag: v.string(),
-    status: v.union(v.literal("success"), v.literal("failed"), v.literal("partial_success")),
-    
-    // HTTP Response Details
-    httpStatusCode: v.optional(v.number()),
-    httpStatusText: v.optional(v.string()),
-    
-    // API Response Details
-    apiStatusCode: v.optional(v.string()),
-    apiMessage: v.optional(v.string()),
-    apiStatus: v.optional(v.boolean()),
-    apiResponseData: v.optional(v.string()),
-    
-    // Error Details
-    errorMessage: v.optional(v.string()),
-    errorType: v.optional(v.string()),
-    errorStack: v.optional(v.string()),
-    
-    // Performance Metrics
-    responseTime: v.optional(v.number()),
-    requestSize: v.optional(v.number()),
-    responseSize: v.optional(v.number()),
-    
-    // Request Details
-    sourceNumber: v.string(),
-    destinationCount: v.number(),
-    messageLength: v.number(),
-    
-    // Timestamps
-    sentAt: v.number(),
-    receivedAt: v.optional(v.number()),
-    
-    // Additional Context
-    retryCount: v.optional(v.number()),
-    userAgent: v.optional(v.string()),
-    ipAddress: v.optional(v.string()),
-    
-    // Detailed Results
-    successfulNumbers: v.optional(v.array(v.string())),
-    failedNumbers: v.optional(v.array(v.string())),
-    individualResults: v.optional(v.array(v.object({
-      phoneNumber: v.string(),
-      status: v.union(v.literal("success"), v.literal("failed")),
-      message: v.optional(v.string()),
-      errorCode: v.optional(v.string()),
-    }))),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db.insert("smsLogs", {
-      campaignId: args.campaignId,
-      batchNumber: args.batchNumber,
-      batchSize: args.phoneNumbers.length,
-      phoneNumbers: args.phoneNumbers,
-      message: args.message,
-      tag: args.tag,
-      status: args.status,
-      
-      // HTTP Response Details
-      httpStatusCode: args.httpStatusCode,
-      httpStatusText: args.httpStatusText,
-      
-      // API Response Details
-      apiStatusCode: args.apiStatusCode,
-      apiMessage: args.apiMessage,
-      apiStatus: args.apiStatus,
-      apiResponseData: args.apiResponseData,
-      
-      // Error Details
-      errorMessage: args.errorMessage,
-      errorType: args.errorType,
-      errorStack: args.errorStack,
-      
-      // Performance Metrics
-      responseTime: args.responseTime,
-      requestSize: args.requestSize,
-      responseSize: args.responseSize,
-      
-      // Request Details
-      sourceNumber: args.sourceNumber,
-      destinationCount: args.destinationCount,
-      messageLength: args.messageLength,
-      
-      // Timestamps
-      sentAt: args.sentAt,
-      receivedAt: args.receivedAt,
-      
-      // Additional Context
-      retryCount: args.retryCount,
-      userAgent: args.userAgent,
-      ipAddress: args.ipAddress,
-      
-      // Detailed Results
-      successfulNumbers: args.successfulNumbers,
-      failedNumbers: args.failedNumbers,
-      individualResults: args.individualResults,
-    });
   },
 });
 
@@ -414,25 +352,92 @@ export const getSegmentsByCampaignAndBatch = internalQuery({
   },
 });
 
-// Helper to patch API payload onto a segment
-export const patchSegmentApiPayload = internalMutation({
+// Enhanced mutation to update segment with detailed logging
+export const updateSegmentWithLogging = internalMutation({
   args: {
     segmentId: v.id("segments"),
-    apiRequest: v.optional(v.string()),
-    apiResponse: v.optional(v.string()),
+    status: v.union(v.literal("pending"), v.literal("in_progress"), v.literal("sent"), v.literal("failed"), v.literal("paused")),
+    sentCount: v.number(),
+    failedCount: v.number(),
+    completedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    
+    // Enhanced logging fields
+    message: v.optional(v.string()),
+    tag: v.optional(v.string()),
     httpStatusCode: v.optional(v.number()),
+    httpStatusText: v.optional(v.string()),
+    apiStatusCode: v.optional(v.string()),
+    apiMessage: v.optional(v.string()),
+    apiStatus: v.optional(v.boolean()),
+    apiResponseData: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    errorType: v.optional(v.string()),
+    errorStack: v.optional(v.string()),
     responseTime: v.optional(v.number()),
     requestSize: v.optional(v.number()),
     responseSize: v.optional(v.number()),
+    sourceNumber: v.optional(v.string()),
+    destinationCount: v.optional(v.number()),
+    messageLength: v.optional(v.number()),
+    sentAt: v.optional(v.number()),
+    receivedAt: v.optional(v.number()),
+    retryCount: v.optional(v.number()),
+    userAgent: v.optional(v.string()),
+    ipAddress: v.optional(v.string()),
+    successfulNumbers: v.optional(v.array(v.string())),
+    failedNumbers: v.optional(v.array(v.string())),
+    individualResults: v.optional(v.array(v.object({
+      phoneNumber: v.string(),
+      status: v.union(v.literal("success"), v.literal("failed")),
+      message: v.optional(v.string()),
+      errorCode: v.optional(v.string()),
+    }))),
+    
+    // Legacy fields
+    apiRequest: v.optional(v.string()),
+    apiResponse: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.segmentId, {
-      apiRequest: args.apiRequest,
-      apiResponse: args.apiResponse,
-      httpStatusCode: args.httpStatusCode,
-      responseTime: args.responseTime,
-      requestSize: args.requestSize,
-      responseSize: args.responseSize,
-    });
+    const updateData: any = {
+      status: args.status,
+      sentCount: args.sentCount,
+      failedCount: args.failedCount,
+      completedAt: args.completedAt,
+      lastError: args.lastError,
+    };
+
+    // Add enhanced logging fields if provided
+    if (args.message !== undefined) updateData.message = args.message;
+    if (args.tag !== undefined) updateData.tag = args.tag;
+    if (args.httpStatusCode !== undefined) updateData.httpStatusCode = args.httpStatusCode;
+    if (args.httpStatusText !== undefined) updateData.httpStatusText = args.httpStatusText;
+    if (args.apiStatusCode !== undefined) updateData.apiStatusCode = args.apiStatusCode;
+    if (args.apiMessage !== undefined) updateData.apiMessage = args.apiMessage;
+    if (args.apiStatus !== undefined) updateData.apiStatus = args.apiStatus;
+    if (args.apiResponseData !== undefined) updateData.apiResponseData = args.apiResponseData;
+    if (args.errorMessage !== undefined) updateData.errorMessage = args.errorMessage;
+    if (args.errorType !== undefined) updateData.errorType = args.errorType;
+    if (args.errorStack !== undefined) updateData.errorStack = args.errorStack;
+    if (args.responseTime !== undefined) updateData.responseTime = args.responseTime;
+    if (args.requestSize !== undefined) updateData.requestSize = args.requestSize;
+    if (args.responseSize !== undefined) updateData.responseSize = args.responseSize;
+    if (args.sourceNumber !== undefined) updateData.sourceNumber = args.sourceNumber;
+    if (args.destinationCount !== undefined) updateData.destinationCount = args.destinationCount;
+    if (args.messageLength !== undefined) updateData.messageLength = args.messageLength;
+    if (args.sentAt !== undefined) updateData.sentAt = args.sentAt;
+    if (args.receivedAt !== undefined) updateData.receivedAt = args.receivedAt;
+    if (args.retryCount !== undefined) updateData.retryCount = args.retryCount;
+    if (args.userAgent !== undefined) updateData.userAgent = args.userAgent;
+    if (args.ipAddress !== undefined) updateData.ipAddress = args.ipAddress;
+    if (args.successfulNumbers !== undefined) updateData.successfulNumbers = args.successfulNumbers;
+    if (args.failedNumbers !== undefined) updateData.failedNumbers = args.failedNumbers;
+    if (args.individualResults !== undefined) updateData.individualResults = args.individualResults;
+    
+    // Legacy fields
+    if (args.apiRequest !== undefined) updateData.apiRequest = args.apiRequest;
+    if (args.apiResponse !== undefined) updateData.apiResponse = args.apiResponse;
+
+    await ctx.db.patch(args.segmentId, updateData);
   },
 });
